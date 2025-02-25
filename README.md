@@ -1,7 +1,3 @@
-Below is a consolidated `README.md` that incorporates all the previous content—your initial roadmap for the "Multiverse Game Engine," the PVE shared mechanics with guns, melee, and knives, and the shared physics engine with limitations—into a single markdown code block. This combines everything into a cohesive document you can download and use as your project's roadmap.
-
----
-
 # Multiverse Game Engine - Development Roadmap
 
 ## Overview
