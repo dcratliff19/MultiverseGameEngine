@@ -22,7 +22,6 @@ export class Game {
             this.light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), this.scene);
             this.ground = BABYLON.MeshBuilder.CreateGround("ground", { width: 10, height: 10 }, this.scene);
             this.ground.position.y = -1;
-
             console.log("Attempting to load Havok via CDN...");
             const havok = await HavokPhysics(); // Global HavokPhysics from CDN
             console.log("Havok loaded successfully:", havok);
@@ -31,6 +30,14 @@ export class Game {
 
             this.player = new PhysicsObject("player", this.scene, this.physicsPlugin);
             this.remotePlayers = {};
+            
+            // Add static physics body to ground
+            this.groundAggregate = new BABYLON.PhysicsAggregate(
+                this.ground,
+                BABYLON.PhysicsShapeType.BOX,
+                { mass: 0 },
+                this.scene
+            );
 
             this.setupControls();
             this.engine.runRenderLoop(() => this.scene.render());
