@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Babylon.js P2P Game</title>
+    <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+    <div id="lobby">
+        <button onclick="startSinglePlayer()">Single Player</button>
+        <button onclick="startMultiplayerAsHost()">Host Game</button>
+        <input id="peerIdInput" type="text" placeholder="Enter Friend's ID">
+        <button onclick="joinMultiplayer(document.getElementById('peerIdInput').value)">Join</button>
+        <button onclick="startReplay()">Replay Last Game</button>
+        <p>Your ID: <span id="myId"></span></p>
+    </div>
+    <canvas id="renderCanvas"></canvas>
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
