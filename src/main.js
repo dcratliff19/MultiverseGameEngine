@@ -1,4 +1,3 @@
-import { Engine } from "@babylonjs/core/Engines/engine";
 import { Game } from "./core/Game";
 import { PeerManager } from "./networking/PeerManager";
 import { LobbyUI } from "./ui/LobbyUI";
@@ -6,7 +5,7 @@ import { Replay } from "./core/Replay";
 import "./style.css";
 
 const canvas = document.getElementById("renderCanvas");
-const engine = new Engine(canvas, true);
+const engine = new BABYLON.Engine(canvas, true);
 
 const game = new Game(engine, canvas);
 const peerManager = new PeerManager(game);

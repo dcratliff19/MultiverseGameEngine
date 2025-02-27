@@ -1,5 +1,3 @@
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-
 export class Replay {
     constructor(game) {
         this.game = game;
@@ -15,7 +13,7 @@ export class Replay {
             while (savedLog.length > 0 && savedLog[0].timestamp <= replayTime) {
                 const event = savedLog.shift();
                 if (event.type === "impulse") {
-                    this.game.player.applyImpulse(new Vector3(...event.data.impulse), new Vector3(...event.data.position));
+                    this.game.player.applyImpulse(new BABYLON.Vector3(...event.data.impulse), new BABYLON.Vector3(...event.data.position));
                 } else if (event.type === "fullState") {
                     this.applyFullState(event.data);
                 }
@@ -25,11 +23,11 @@ export class Replay {
 
     applyFullState(state) {
         this.game.player.mesh.position.set(...state.player.position);
-        this.game.player.physicsBody.setLinearVelocity(new Vector3(...state.player.velocity));
+        this.game.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(...state.player.velocity));
         state.objects.forEach((obj) => {
             let mesh = this.game.scene.getMeshByName(obj.name) || new PhysicsObject(obj.name, this.game.scene, this.game.physicsPlugin);
             mesh.mesh.position.set(...obj.position);
-            mesh.physicsBody.setLinearVelocity(new Vector3(...obj.velocity));
+            mesh.physicsBody.setLinearVelocity(new BABYLON.Vector3(...obj.velocity));
         });
     }
 }

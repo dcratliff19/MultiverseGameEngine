@@ -4,7 +4,10 @@ export default {
     server: {
         port: 5173,
         strictPort: true,
-        open: true
+        open: true,
+        mimeTypes: {
+            'application/wasm': ['wasm']
+        }
     },
     preview: {
         port: 4173,

@@ -1,5 +1,4 @@
 import Peer from "peerjs";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { PhysicsObject } from "../components/PhysicsObject";
 
 export class PeerManager {
@@ -64,7 +63,7 @@ export class PeerManager {
             }
             const player = this.game.remotePlayers[data.id];
             player.mesh.position.set(...data.position);
-            player.physicsBody.setLinearVelocity(new Vector3(...data.velocity));
+            player.physicsBody.setLinearVelocity(new BABYLON.Vector3(...data.velocity));
         }
     }
 }

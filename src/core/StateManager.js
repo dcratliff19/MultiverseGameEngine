@@ -1,6 +1,3 @@
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { PhysicsObject } from "../components/PhysicsObject";
-
 export class StateManager {
     constructor(game) {
         this.game = game;
@@ -29,15 +26,15 @@ export class StateManager {
 
         const state = JSON.parse(savedState);
         this.game.player.mesh.position.set(...state.player.position);
-        this.game.player.physicsBody.setLinearVelocity(new Vector3(...state.player.velocity));
+        this.game.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(...state.player.velocity));
 
         state.objects.forEach((obj) => {
             let mesh = this.game.scene.getMeshByName(obj.name);
             if (!mesh) {
-                mesh = new PhysicsObject(obj.name, this.game.scene, this.game.physicsPlugin);
+                mesh = new BABYLON.PhysicsObject(obj.name, this.game.scene, this.game.physicsPlugin);
             }
             mesh.mesh.position.set(...obj.position);
-            mesh.physicsBody.setLinearVelocity(new Vector3(...obj.velocity));
+            mesh.physicsBody.setLinearVelocity(new BABYLON.Vector3(...obj.velocity));
         });
     }
 }
