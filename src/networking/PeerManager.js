@@ -1,6 +1,8 @@
 import Peer from "peerjs";
 import { PhysicsObject } from "../components/PhysicsObject";
 import { EventStreamManager } from "./streams/EventStreamManager";
+import { GhostStreamManager } from "./streams/GhostStreamManager";
+import { MoveStreamManager } from "./streams/MoveStreamManager";
 
 export class PeerManager {
     constructor(game) {
@@ -11,17 +13,17 @@ export class PeerManager {
         this.isMultiplayer = false;
         this.streamManagers = {
             event: new EventStreamManager(this),
-            // ghost: new GhostStreamManager(this),
-            // move: new MoveStreamManager(this),
+            ghost: new GhostStreamManager(this),
+            move: new MoveStreamManager(this)
             // datablock: new DatablockStreamManager(this),
             // string: new StringStreamManager(this)
         };
         this.setupSync();
     }
 
-    startAsHost() {
+    startAsHost(customId) {
         this.isHost = true;
-        this.peer = new Peer({
+        this.peer = new Peer(customId || undefined, {
             config: {
                 iceServers: [
                     { urls: "stun:stun.l.google.com:19302" },
@@ -71,14 +73,8 @@ export class PeerManager {
 
     setupSync() {
         this.game.scene.onBeforeRenderObservable.add(() => {
-            if (this.isMultiplayer && this.connections.length > 0) {
-                const state = {
-                    id: this.peer.id,
-                    position: this.game.player.mesh.position.asArray(),
-                    velocity: this.game.player.physicsBody.getLinearVelocity().asArray()
-                };
-                // Both host and client send their state
-                this.sendDataToPeers({ streamType: "ghost", payload: state });
+            if (this.isMultiplayer && this.connections.length > 0 && this.isHost) {
+                this.streamManagers.ghost.sendUpdate();
             }
         });
     }
@@ -92,21 +88,8 @@ export class PeerManager {
         const { streamType, payload } = data;
         if (this.streamManagers[streamType]) {
             this.streamManagers[streamType].handleIncomingData(payload);
-        } else if (streamType === "ghost") {
-            // Handle ghost updates for all peers (host and clients)
-            if (!this.game.remotePlayers[payload.id] && payload.id !== this.peer.id) {
-                this.game.remotePlayers[payload.id] = new PhysicsObject(`player-${payload.id}`, this.game.scene, this.game.physicsPlugin);
-            }
-            const player = this.game.remotePlayers[payload.id];
-            if (player) { // Ensure player exists before updating
-                player.mesh.position.set(...payload.position);
-                player.physicsBody.setLinearVelocity(new BABYLON.Vector3(...payload.velocity));
-            }
-            // If host, broadcast to other peers
-            if (this.isHost && this.connections.length > 1) {
-                this.connections.forEach(conn => {
-                    if (conn.peer !== payload.id) conn.send(data);
-                });
+            if (this.isHost && streamType === "move") {
+                this.streamManagers.ghost.sendUpdate();
             }
         } else if (streamType === "datablock") {
             this.applyFullState(payload);
@@ -120,21 +103,27 @@ export class PeerManager {
     }
 
     applyFullState(state) {
-        this.game.player.mesh.position.set(...state.player.position);
-        this.game.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(...state.player.velocity));
-        state.objects.forEach((obj) => {
-            let mesh = this.game.scene.getMeshByName(obj.name);
-            if (!mesh && obj.name !== `player-${this.peer.id}`) {
-                mesh = new PhysicsObject(obj.name, this.game.scene, this.game.physicsPlugin);
+        if (!this.isHost) { // Clients apply full state from host
+            // Update local player only if it's not in the state (host’s player is authoritative)
+            if (!state.objects.some(obj => obj.name === `player-${this.peer.id}`)) {
+                this.game.player.mesh.position.set(...state.player.position);
+                this.game.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(...state.player.velocity));
             }
-            if (mesh) {
-                mesh.mesh.position.set(...obj.position);
-                mesh.physicsBody.setLinearVelocity(new BABYLON.Vector3(...obj.velocity));
-            }
-        });
+            // Apply remote players (including host)
+            state.objects.forEach((obj) => {
+                if (obj.name !== `player-${this.peer.id}`) { // Skip local player
+                    if (!this.game.remotePlayers[obj.name.split('-')[1]]) {
+                        this.game.remotePlayers[obj.name.split('-')[1]] = new PhysicsObject(obj.name, this.game.scene, this.game.physicsPlugin);
+                    }
+                    const player = this.game.remotePlayers[obj.name.split('-')[1]];
+                    player.mesh.position.set(...obj.position);
+                    player.physicsBody.setLinearVelocity(new BABYLON.Vector3(...obj.velocity));
+                }
+            });
+        }
     }
 
     handleData(data) {
-        this.receiveData(data); // Legacy redirect
+        this.receiveData(data);
     }
 }

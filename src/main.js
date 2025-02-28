@@ -9,6 +9,7 @@ const engine = new BABYLON.Engine(canvas, true);
 
 const game = new Game(engine, canvas);
 const peerManager = new PeerManager(game);
+game.setPeerManager(peerManager);
 const lobbyUI = new LobbyUI(peerManager);
 const replay = new Replay(game);
 
@@ -17,7 +18,7 @@ window.startSinglePlayer = () => {
     lobbyUI.hide();
     game.startSinglePlayer();
 };
-window.startMultiplayerAsHost = () => peerManager.startAsHost();
+window.startMultiplayerAsHost = (myId) => peerManager.startAsHost(myId);
 window.joinMultiplayer = (peerId) => peerManager.join(peerId);
 window.startReplay = () => {
     lobbyUI.hide();
