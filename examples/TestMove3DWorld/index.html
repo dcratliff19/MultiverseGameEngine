@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Babylon.js Third-Person Character with Havok</title>
+    <script src="https://cdn.babylonjs.com/havok/HavokPhysics_umd.js"></script>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+    <style>
+      html, body {
+        overflow: hidden;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+      #renderCanvas {
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+        cursor: none; /* Hide cursor explicitly */
+      }
+      #canvasZone {
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="canvasZone"><canvas id="renderCanvas"></canvas></div>
+    <script>
+      const canvas = document.getElementById("renderCanvas");
+      const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
+
+      const createScene = async function () {
+        const scene = new BABYLON.Scene(engine);
+
+        // **Camera Setup**
+        const camera = new BABYLON.FollowCamera("camera", new BABYLON.Vector3(0, 5, -10), scene);
+        camera.heightOffset = 5;
+        camera.radius = 10;
+        camera.rotationOffset = -180;
+        camera.cameraAcceleration = 0.05;
+        camera.maxCameraSpeed = 10;
+        camera.fov = 1.5;
+        canvas.focus();
+
+        // **Lighting**
+        const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+        light.intensity = 0.7;
+
+        // **Ground**
+        const ground = BABYLON.MeshBuilder.CreateGround("ground", { width: 100, height: 100 }, scene);
+
+        // **Physics Setup with Havok**
+        const havokInstance = await HavokPhysics();
+        const hk = new BABYLON.HavokPlugin(true, havokInstance);
+        scene.enablePhysics(new BABYLON.Vector3(0, -9.8, 0), hk);
+        const groundAggregate = new BABYLON.PhysicsAggregate(ground, BABYLON.PhysicsShapeType.BOX, { mass: 0 }, scene);
+
+        // **Load Character Model**
+        const result = await BABYLON.SceneLoader.ImportMeshAsync("", "", "mountain_orge.glb", scene);
+        const characterRoot = result.meshes[0]; // Use the root mesh for physics and control
+        characterRoot.position.y = 2;
+        characterRoot.rotationQuaternion = BABYLON.Quaternion.RotationYawPitchRoll(Math.PI, 0, 0);
+        camera.lockedTarget = characterRoot;
+
+        // **Disable Unnecessary Meshes (e.g., Platform)**
+        const platform = result.meshes.find(mesh => mesh.name === "Plane.001_Material_0");
+        if (platform) platform.setEnabled(false);
+
+        // **Load Animations**
+        const idleAnim = result.animationGroups.find(anim => anim.name === "Armature|Ideal");
+        const walkAnim = result.animationGroups.find(anim => anim.name === "Armature|Walk");
+        const runAnim = result.animationGroups.find(anim => anim.name === "Armature|Run") || walkAnim;
+        const jumpAnim = result.animationGroups.find(anim => anim.name === "Armature|Jump1");
+        const punchAnim = result.animationGroups.find(anim => anim.name === "Armature|Punch");
+        if (jumpAnim) jumpAnim.speedRatio = 2; // Speed up jump animation for better timing
+        if (idleAnim) idleAnim.play(true);
+
+        // **Disable Root Motion for All Animations**
+        result.animationGroups.forEach(anim => {
+          anim.applyRootMotion = false; // Prevent animations from moving the mesh
+        });
+
+        // **Physics for Character**
+        const characterAggregate = new BABYLON.PhysicsAggregate(characterRoot, BABYLON.PhysicsShapeType.BOX, {
+          mass: 1,
+          restitution: 0.1,
+          extents: new BABYLON.Vector3(1, 2, 1)
+        }, scene);
+        characterAggregate.body.setAngularVelocity(new BABYLON.Vector3(0, 0, 0));
+        characterAggregate.body.disablePreStep = false;
+
+        // **Input Handling**
+        const inputMap = {};
+        scene.actionManager = new BABYLON.ActionManager(scene);
+        scene.actionManager.registerAction(
+          new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnKeyDownTrigger, (evt) => {
+            inputMap[evt.sourceEvent.key.toLowerCase()] = true;
+            inputMap["shift"] = evt.sourceEvent.shiftKey;
+          })
+        );
+        scene.actionManager.registerAction(
+          new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnKeyUpTrigger, (evt) => {
+            inputMap[evt.sourceEvent.key.toLowerCase()] = false;
+            inputMap["shift"] = evt.sourceEvent.shiftKey;
+          })
+        );
+
+        // **Mouse Rotation**
+        let yaw = Math.PI;
+        canvas.addEventListener("click", () => {
+          canvas.requestPointerLock();
+        });
+        canvas.addEventListener("mousemove", (evt) => {
+          if (document.pointerLockElement === canvas) {
+            const deltaX = evt.movementX;
+            yaw += deltaX * 0.005; // Adjust sensitivity
+            characterRoot.rotationQuaternion = BABYLON.Quaternion.RotationYawPitchRoll(yaw, 0, 0);
+            characterAggregate.body.transformNode.rotationQuaternion = characterRoot.rotationQuaternion;
+          }
+        });
+
+        // **Punching Logic**
+        let isPunching = false;
+        canvas.addEventListener("click", () => {
+          if (!isPunching && punchAnim) {
+            isPunching = true;
+            currentAnim?.stop();
+            punchAnim.play(false);
+            currentAnim = punchAnim;
+            punchAnim.onAnimationEndObservable.addOnce(() => {
+              isPunching = false;
+              const isMoving = inputMap["w"] || inputMap["s"] || inputMap["a"] || inputMap["d"];
+              if (isMoving && isGrounded) {
+                if (inputMap["shift"]) {
+                  runAnim.play(true);
+                  currentAnim = runAnim;
+                } else {
+                  walkAnim.play(true);
+                  currentAnim = walkAnim;
+                }
+              } else if (isGrounded) {
+                idleAnim.play(true);
+                currentAnim = idleAnim;
+              }
+            });
+          }
+        });
+
+        // **Movement and Animation Variables**
+        const walkSpeed = 5;
+        const runSpeed = 10;
+        const jumpForce = 5;
+        let isGrounded = false;
+        let currentAnim = idleAnim;
+        let wasGrounded = false;
+
+        // **Main Update Loop**
+        scene.onBeforeRenderObservable.add(() => {
+          const velocity = characterAggregate.body.getLinearVelocity();
+          let moveDirection = BABYLON.Vector3.Zero();
+          const forward = characterRoot.forward;
+          forward.y = 0;
+          forward.normalize();
+          const right = BABYLON.Vector3.Cross(forward, BABYLON.Vector3.Up());
+
+          // **Calculate Movement Direction**
+          if (inputMap["w"]) moveDirection.addInPlace(forward);
+          if (inputMap["s"]) moveDirection.subtractInPlace(forward);
+          if (inputMap["a"]) moveDirection.subtractInPlace(right);
+          if (inputMap["d"]) moveDirection.addInPlace(right);
+
+          // **Apply Movement Velocity**
+          if (!isPunching) {
+            if (moveDirection.length() > 0) {
+              const speed = inputMap["shift"] ? runSpeed : walkSpeed;
+              moveDirection.normalize().scaleInPlace(speed);
+              velocity.x = moveDirection.x;
+              velocity.z = moveDirection.z;
+            } else {
+              velocity.x = 0;
+              velocity.z = 0;
+            }
+          } else {
+            velocity.x = 0;
+            velocity.z = 0;
+          }
+
+          // **Jump Logic**
+          if (inputMap[" "] && isGrounded && !isPunching) {
+            if (jumpAnim) {
+              currentAnim?.stop();
+              jumpAnim.play();
+              currentAnim = jumpAnim;
+            }
+            velocity.y = jumpForce;
+            isGrounded = false;
+          }
+
+          characterAggregate.body.setLinearVelocity(velocity);
+          characterAggregate.body.setAngularVelocity(new BABYLON.Vector3(0, 0, 0));
+
+          // **Ground Check**
+          const ray = new BABYLON.Ray(characterRoot.position, new BABYLON.Vector3(0, -1, 0), 2.1);
+          const hit = scene.pickWithRay(ray);
+          wasGrounded = isGrounded;
+          isGrounded = hit.hit && hit.pickedMesh === ground && Math.abs(velocity.y) < 0.01;
+
+          // **Handle Landing from Jump**
+          if (!wasGrounded && isGrounded && currentAnim === jumpAnim) {
+            jumpAnim.stop();
+            const isMoving = inputMap["w"] || inputMap["s"] || inputMap["a"] || inputMap["d"];
+            if (isMoving) {
+              if (inputMap["shift"]) {
+                runAnim.play(true);
+                currentAnim = runAnim;
+              } else {
+                walkAnim.play(true);
+                currentAnim = walkAnim;
+              }
+            } else {
+              idleAnim.play(true);
+              currentAnim = idleAnim;
+            }
+          }
+
+          // **Animation State Management**
+          if (isGrounded && !isPunching) {
+            const isMoving = inputMap["w"] || inputMap["s"] || inputMap["a"] || inputMap["d"];
+            if (isMoving) {
+              if (inputMap["shift"]) {
+                if (currentAnim !== runAnim) {
+                  currentAnim?.stop();
+                  runAnim.play(true);
+                  currentAnim = runAnim;
+                }
+              } else {
+                if (currentAnim !== walkAnim) {
+                  currentAnim?.stop();
+                  walkAnim.play(true);
+                  currentAnim = walkAnim;
+                }
+              }
+            } else {
+              if (currentAnim !== idleAnim) {
+                currentAnim?.stop();
+                idleAnim.play(true);
+                currentAnim = idleAnim;
+              }
+            }
+          }
+        });
+
+        return scene;
+      };
+
+      createScene().then((scene) => {
+        engine.runRenderLoop(() => scene && scene.render());
+      });
+
+      window.addEventListener("resize", () => engine.resize());
+    </script>
+  </body>
+</html>
