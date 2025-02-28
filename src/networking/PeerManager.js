@@ -71,12 +71,13 @@ export class PeerManager {
 
     setupSync() {
         this.game.scene.onBeforeRenderObservable.add(() => {
-            if (this.isMultiplayer && this.connections.length > 0 && this.isHost) {
+            if (this.isMultiplayer && this.connections.length > 0) {
                 const state = {
                     id: this.peer.id,
                     position: this.game.player.mesh.position.asArray(),
                     velocity: this.game.player.physicsBody.getLinearVelocity().asArray()
                 };
+                // Both host and client send their state
                 this.sendDataToPeers({ streamType: "ghost", payload: state });
             }
         });
@@ -92,24 +93,29 @@ export class PeerManager {
         if (this.streamManagers[streamType]) {
             this.streamManagers[streamType].handleIncomingData(payload);
         } else if (streamType === "ghost") {
-            // Handle ghost updates directly for now
-            if (!this.game.remotePlayers[payload.id]) {
+            // Handle ghost updates for all peers (host and clients)
+            if (!this.game.remotePlayers[payload.id] && payload.id !== this.peer.id) {
                 this.game.remotePlayers[payload.id] = new PhysicsObject(`player-${payload.id}`, this.game.scene, this.game.physicsPlugin);
             }
             const player = this.game.remotePlayers[payload.id];
-            player.mesh.position.set(...payload.position);
-            player.physicsBody.setLinearVelocity(new BABYLON.Vector3(...payload.velocity));
+            if (player) { // Ensure player exists before updating
+                player.mesh.position.set(...payload.position);
+                player.physicsBody.setLinearVelocity(new BABYLON.Vector3(...payload.velocity));
+            }
+            // If host, broadcast to other peers
+            if (this.isHost && this.connections.length > 1) {
+                this.connections.forEach(conn => {
+                    if (conn.peer !== payload.id) conn.send(data);
+                });
+            }
         } else if (streamType === "datablock") {
-            // Handle full state sync for joining peers
             this.applyFullState(payload);
         }
     }
 
     sendDataToPeers(data) {
-        if (this.isHost) {
+        if (this.connections.length) {
             this.connections.forEach(conn => conn.send(data));
-        } else if (this.connections.length) {
-            this.connections[0].send(data); // Send to host
         }
     }
 
@@ -118,16 +124,17 @@ export class PeerManager {
         this.game.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(...state.player.velocity));
         state.objects.forEach((obj) => {
             let mesh = this.game.scene.getMeshByName(obj.name);
-            if (!mesh) {
+            if (!mesh && obj.name !== `player-${this.peer.id}`) {
                 mesh = new PhysicsObject(obj.name, this.game.scene, this.game.physicsPlugin);
             }
-            mesh.mesh.position.set(...obj.position);
-            mesh.physicsBody.setLinearVelocity(new BABYLON.Vector3(...obj.velocity));
+            if (mesh) {
+                mesh.mesh.position.set(...obj.position);
+                mesh.physicsBody.setLinearVelocity(new BABYLON.Vector3(...obj.velocity));
+            }
         });
     }
 
     handleData(data) {
-        // Legacy method, redirect to receiveData
-        this.receiveData(data);
+        this.receiveData(data); // Legacy redirect
     }
 }
