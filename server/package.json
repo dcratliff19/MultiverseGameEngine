@@ -1,0 +1,13 @@
+{
+    "name": "multiverse-server",
+    "version": "1.0.0",
+    "main": "src/server.js",
+    "scripts": {
+      "start": "node src/server.js"
+    },
+    "dependencies": {
+      "express": "^4.17.1",
+      "socket.io": "^4.5.0",
+      "cannon-es": "^0.20.0" 
+    }
+  }
