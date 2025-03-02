@@ -17,7 +17,10 @@ export class Game {
     }
 
     setPeerManager(peerManager) {
-        this.peerManager = peerManager; // Method to set peerManager after instantiation
+        if (this.peerManager && !this.peerManager.isHost && this.isMultiplayer) {
+            this.player.setKinematic(true);
+        }
+        this.peerManager = peerManager;
     }
 
     async setupScene() {
@@ -31,26 +34,36 @@ export class Game {
             this.ground.position.y = -1;
 
             console.log("Attempting to load Havok via CDN...");
-            const havok = await HavokPhysics(); // Global HavokPhysics from CDN
+            const havok = await HavokPhysics();
+            if (!havok) {
+                throw new Error("HavokPhysics() returned undefined or null");
+            }
             console.log("Havok loaded successfully:", havok);
             this.physicsPlugin = new BABYLON.HavokPlugin(true, havok);
+            console.log("Physics plugin created:", this.physicsPlugin);
+
             this.scene.enablePhysics(new BABYLON.Vector3(0, -9.81, 0), this.physicsPlugin);
+            console.log("Physics enabled on scene");
+
+            this.groundAggregate = new BABYLON.PhysicsAggregate(this.ground, BABYLON.PhysicsShapeType.BOX, { mass: 0 }, this.scene);
+            console.log("Ground aggregate created");
 
             this.player = new PhysicsObject("player", this.scene, this.physicsPlugin);
+            console.log("Player physics body:", this.player.physicsBody);
             this.remotePlayers = {};
 
-            // Add static physics body to ground
-            this.groundAggregate = new BABYLON.PhysicsAggregate(
-                this.ground,
-                BABYLON.PhysicsShapeType.BOX,
-                { mass: 0 },
-                this.scene
-            );
+            // Add velocity reset for client in multiplayer
+            this.scene.onAfterPhysicsObservable.add(() => {
+                if (this.peerManager && !this.peerManager.isHost && this.isMultiplayer) {
+                    this.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(0, 0, 0));
+                }
+            });
 
             this.engine.runRenderLoop(() => this.scene.render());
         } catch (error) {
             console.error("Failed to load Havok:", error);
             console.error("Error stack:", error.stack);
+            this.engine.runRenderLoop(() => this.scene.render());
         }
     }
 
@@ -66,10 +79,12 @@ export class Game {
                     case "d": impulse = new BABYLON.Vector3(speed, 0, 0); break;
                 }
                 if (impulse) {
-                    // Always apply locally for immediate control
-                    this.player.applyImpulse(impulse, this.player.mesh.position);
-                    // Send to host if in multiplayer
+                    // Apply impulse locally only if host, otherwise wait for host sync
+                    if (!this.peerManager || this.peerManager.isHost || !this.peerManager.isMultiplayer) {
+                        this.player.applyImpulse(impulse, this.player.mesh.position);
+                    }
                     if (this.peerManager && this.peerManager.isMultiplayer) {
+                        console.log("Sending move from client:", impulse.asArray());
                         this.peerManager.streamManagers.move.sendMove(impulse);
                     }
                     this.stateManager.logEvent("impulse", { impulse: impulse.asArray(), position: this.player.mesh.position.asArray() });
@@ -95,29 +110,18 @@ export class Game {
                 position: this.player.mesh.position.asArray(),
                 velocity: this.player.physicsBody.getLinearVelocity().asArray()
             },
-            objects: this.scene.meshes
-                .filter((m) => m !== this.player.mesh && m !== this.ground)
-                .map((m) => ({
-                    name: m.name,
-                    position: m.position.asArray(),
-                    velocity: m.physicsBody ? m.physicsBody.getLinearVelocity().asArray() : [0, 0, 0]
-                }))
+            objects: []
         };
-        // Include remote players in state for host
-        if (this.peerManager?.isHost) {
-            Object.keys(this.remotePlayers).forEach(id => {
-                const player = this.remotePlayers[id];
-                state.objects.push({
-                    name: `player-${id}`,
-                    position: player.mesh.position.asArray(),
-                    velocity: player.physicsBody.getLinearVelocity().asArray()
-                });
+        Object.keys(this.remotePlayers).forEach(id => {
+            const player = this.remotePlayers[id];
+            state.objects.push({
+                name: `player-${id}`,
+                position: player.mesh.position.asArray(),
+                velocity: player.physicsBody.getLinearVelocity().asArray()
             });
-        }
+        });
         return state;
     }
 
-    startSinglePlayer() {
-        // Implementation for single-player mode if needed
-    }
+    startSinglePlayer() {}
 }

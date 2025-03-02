@@ -1,5 +1,5 @@
 import Peer from "peerjs";
-import { PhysicsObject } from "../components/PhysicsObject";
+import { PhysicsObject } from "../components/PhysicsObject"; // Added import
 import { EventStreamManager } from "./streams/EventStreamManager";
 import { GhostStreamManager } from "./streams/GhostStreamManager";
 import { MoveStreamManager } from "./streams/MoveStreamManager";
@@ -14,10 +14,11 @@ export class PeerManager {
         this.streamManagers = {
             event: new EventStreamManager(this),
             ghost: new GhostStreamManager(this),
-            move: new MoveStreamManager(this)
+            move: new MoveStreamManager(this),
             // datablock: new DatablockStreamManager(this),
             // string: new StringStreamManager(this)
         };
+        this.pendingMoves = [];
         this.setupSync();
     }
 
@@ -66,6 +67,12 @@ export class PeerManager {
             conn.on("open", () => {
                 this.connections.push(conn);
                 this.isMultiplayer = true;
+                const initialState = {
+                    id: myId,
+                    position: this.game.player.mesh.position.asArray(),
+                    velocity: this.game.player.physicsBody.getLinearVelocity().asArray()
+                };
+                conn.send({ streamType: "ghost", payload: initialState });
             });
             conn.on("data", (data) => this.receiveData(data));
         });
@@ -87,12 +94,31 @@ export class PeerManager {
     receiveData(data) {
         const { streamType, payload } = data;
         if (this.streamManagers[streamType]) {
-            this.streamManagers[streamType].handleIncomingData(payload);
             if (this.isHost && streamType === "move") {
-                this.streamManagers.ghost.sendUpdate();
+                this.pendingMoves.push(payload);
+                this.processPendingMoves();
+            } else {
+                this.streamManagers[streamType].handleIncomingData(payload);
+            }
+            if (this.isHost && streamType === "ghost") {
+                this.processPendingMoves();
             }
         } else if (streamType === "datablock") {
             this.applyFullState(payload);
+        }
+    }
+
+    processPendingMoves() {
+        if (!this.isHost) return;
+        while (this.pendingMoves.length > 0) {
+            const payload = this.pendingMoves.shift();
+            if (this.game.remotePlayers[payload.id]) {
+                this.streamManagers.move.handleIncomingData(payload);
+            } else {
+                console.warn("Player not yet initialized for move:", payload.id);
+                this.pendingMoves.unshift(payload);
+                break;
+            }
         }
     }
 
@@ -103,17 +129,17 @@ export class PeerManager {
     }
 
     applyFullState(state) {
-        if (!this.isHost) { // Clients apply full state from host
-            // Update local player only if it's not in the state (host’s player is authoritative)
-            if (!state.objects.some(obj => obj.name === `player-${this.peer.id}`)) {
-                this.game.player.mesh.position.set(...state.player.position);
-                this.game.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(...state.player.velocity));
-            }
-            // Apply remote players (including host)
+        if (!this.isHost) {
+            // Apply host’s state and remote players, preserving client’s current position
             state.objects.forEach((obj) => {
-                if (obj.name !== `player-${this.peer.id}`) { // Skip local player
+                if (obj.name !== `player-${this.peer.id}`) {
                     if (!this.game.remotePlayers[obj.name.split('-')[1]]) {
-                        this.game.remotePlayers[obj.name.split('-')[1]] = new PhysicsObject(obj.name, this.game.scene, this.game.physicsPlugin);
+                        this.game.remotePlayers[obj.name.split('-')[1]] = new PhysicsObject(
+                            obj.name,
+                            this.game.scene,
+                            this.game.physicsPlugin,
+                            { position: new BABYLON.Vector3(...obj.position) } // Use actual position
+                        );
                     }
                     const player = this.game.remotePlayers[obj.name.split('-')[1]];
                     player.mesh.position.set(...obj.position);
