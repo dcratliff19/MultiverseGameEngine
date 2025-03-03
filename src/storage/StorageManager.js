@@ -225,5 +225,28 @@ class StorageManager {
     }
   }
   
-
+  // Example usage:
+  /*
+  const storage = new StorageManager('MyAppDB', 'MyStore', 2); // Frame skip every 2 frames
+  
+  // Queue some operations
+  storage.writeQueued({ id: 'user1', name: 'Grok' }, (error, result) => {
+    if (error) console.error('Write failed:', error);
+    else console.log('Wrote:', result);
+  });
+  
+  storage.updateQueued({ id: 'user1', name: 'Grok 3' }, (error, result) => {
+    if (error) console.error('Update failed:', error);
+    else console.log('Updated:', result);
+  });
+  
+  storage.getQueued('user1', (error, result) => {
+    if (error) console.error('Get failed:', error);
+    else console.log('Got:', result);
+  });
+  
+  storage.deleteQueued('user1', (error) => {
+    if (error) console.error('Delete failed:', error);
+    else console.log('Deleted!');
+  });
   
