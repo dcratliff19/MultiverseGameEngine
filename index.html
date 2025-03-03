@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>Babylon.js P2P Game</title>
     <link rel="stylesheet" href="/src/style.css">
+    <!-- Load Babylon.js and Havok from CDN -->
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
     <script src="https://cdn.babylonjs.com/havok/HavokPhysics_umd.js"></script>
@@ -11,7 +12,8 @@
 <body>
     <div id="lobby">
         <button onclick="startSinglePlayer()">Single Player</button>
-        <button onclick="startMultiplayerAsHost()">Host Game</button>
+        <input id="hostIdInput" type="text" maxlength="6" placeholder="6-digit Host ID">
+        <button onclick="startMultiplayerAsHost(document.getElementById('hostIdInput').value)">Host Game</button>
         <input id="peerIdInput" type="text" placeholder="Enter Friend's ID">
         <button onclick="joinMultiplayer(document.getElementById('peerIdInput').value)">Join</button>
         <button onclick="startReplay()">Replay Last Game</button>
