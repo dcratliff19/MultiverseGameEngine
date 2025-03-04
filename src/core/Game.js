@@ -10,6 +10,7 @@ export class Game {
         this.isReady = false;
         this.remotePlayers = {};
         this.peerManager = null;
+        this.keysHeld = { w: false, s: false, a: false, d: false }; // Track held keys
         this.setupScene().then(() => {
             this.isReady = true;
             this.setupControls();
@@ -17,9 +18,6 @@ export class Game {
     }
 
     setPeerManager(peerManager) {
-        if (this.peerManager && !this.peerManager.isHost && this.isMultiplayer) {
-            this.player.setKinematic(true);
-        }
         this.peerManager = peerManager;
     }
 
@@ -49,10 +47,8 @@ export class Game {
             console.log("Ground aggregate created");
 
             this.player = new PhysicsObject("player", this.scene, this.physicsPlugin);
-            console.log("Player physics body:", this.player.physicsBody);
             this.remotePlayers = {};
 
-            // Add velocity reset for client in multiplayer
             this.scene.onAfterPhysicsObservable.add(() => {
                 if (this.peerManager && !this.peerManager.isHost && this.isMultiplayer) {
                     this.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(0, 0, 0));
@@ -68,27 +64,45 @@ export class Game {
     }
 
     setupControls() {
+        // Track key states
         this.scene.onKeyboardObservable.add((kbInfo) => {
+            const key = kbInfo.event.key.toLowerCase();
             if (kbInfo.type === BABYLON.KeyboardEventTypes.KEYDOWN) {
-                const speed = 10;
-                let impulse;
-                switch (kbInfo.event.key) {
-                    case "w": impulse = new BABYLON.Vector3(0, 0, speed); break;
-                    case "s": impulse = new BABYLON.Vector3(0, 0, -speed); break;
-                    case "a": impulse = new BABYLON.Vector3(-speed, 0, 0); break;
-                    case "d": impulse = new BABYLON.Vector3(speed, 0, 0); break;
+                if (this.keysHeld.hasOwnProperty(key)) {
+                    this.keysHeld[key] = true;
                 }
-                if (impulse) {
-                    // Apply impulse locally only if host, otherwise wait for host sync
-                    if (!this.peerManager || this.peerManager.isHost || !this.peerManager.isMultiplayer) {
-                        this.player.applyImpulse(impulse, this.player.mesh.position);
-                    }
-                    if (this.peerManager && this.peerManager.isMultiplayer) {
-                        console.log("Sending move from client:", impulse.asArray());
-                        this.peerManager.streamManagers.move.sendMove(impulse);
-                    }
-                    this.stateManager.logEvent("impulse", { impulse: impulse.asArray(), position: this.player.mesh.position.asArray() });
+            } else if (kbInfo.type === BABYLON.KeyboardEventTypes.KEYUP) {
+                if (this.keysHeld.hasOwnProperty(key)) {
+                    this.keysHeld[key] = false;
                 }
+            }
+        });
+
+        // Update velocity every frame based on held keys
+        this.scene.onBeforeRenderObservable.add(() => {
+            const speed = 5; // Adjust for desired movement speed
+            let velocity = new BABYLON.Vector3(0, 0, 0);
+
+            if (this.keysHeld.w) velocity.z = speed;
+            if (this.keysHeld.s) velocity.z = -speed;
+            if (this.keysHeld.a) velocity.x = -speed;
+            if (this.keysHeld.d) velocity.x = speed;
+
+            // Normalize diagonal movement to maintain consistent speed
+            if (velocity.length() > speed) {
+                velocity = velocity.normalize().scale(speed);
+            }
+
+            // Apply velocity and send to host if in multiplayer
+            if (velocity.length() > 0 || (this.keysHeld.w || this.keysHeld.s || this.keysHeld.a || this.keysHeld.d)) {
+                if (!this.peerManager || this.peerManager.isHost || !this.peerManager.isMultiplayer) {
+                    this.player.physicsBody.setLinearVelocity(velocity);
+                }
+                if (this.peerManager && this.peerManager.isMultiplayer) {
+                    console.log("Sending velocity from client:", velocity.asArray());
+                    this.peerManager.streamManagers.move.sendMove(velocity);
+                }
+                this.stateManager.logEvent("velocity", { velocity: velocity.asArray(), position: this.player.mesh.position.asArray() });
             }
         });
     }

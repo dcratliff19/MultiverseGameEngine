@@ -1,4 +1,4 @@
-import { PhysicsObject } from "../../components/PhysicsObject"; // Added import
+import { PhysicsObject } from "../../components/PhysicsObject";
 
 export class MoveStreamManager {
     constructor(peerManager) {
@@ -22,15 +22,14 @@ export class MoveStreamManager {
                 console.log("Move received:", payload);
                 if (!this.latestMove || payload.timestamp > this.latestMove.timestamp) {
                     this.latestMove = payload;
-                    const impulse = Array.isArray(payload.impulse) && payload.impulse.length === 3 
-                        ? new BABYLON.Vector3(...payload.impulse)
+                    const velocity = Array.isArray(payload.velocity) && payload.velocity.length === 3 
+                        ? new BABYLON.Vector3(...payload.velocity)
                         : new BABYLON.Vector3(0, 0, 0);
-                    const position = player.mesh.position.clone();
                     try {
-                        player.physicsBody.applyImpulse(impulse, position);
-                        console.log("Impulse applied:", { impulse: impulse.asArray(), position: position.asArray() });
+                        player.physicsBody.setLinearVelocity(velocity);
+                        console.log("Velocity applied:", { velocity: velocity.asArray(), position: player.mesh.position.asArray() });
                     } catch (error) {
-                        console.error("Failed to apply impulse:", error, { impulse: impulse.asArray(), position: position.asArray() });
+                        console.error("Failed to apply velocity:", error, { velocity: velocity.asArray(), position: player.mesh.position.asArray() });
                     }
                 }
             } else {
@@ -39,12 +38,12 @@ export class MoveStreamManager {
         }
     }
 
-    sendMove(impulse) {
+    sendMove(velocity) {
         const now = Date.now();
         if (now - this.lastMoveTime >= this.moveInterval && this.peerManager.isMultiplayer) {
             const moveData = {
                 id: this.peerManager.peer.id,
-                impulse: impulse.asArray(),
+                velocity: velocity.asArray(), // Changed from impulse to velocity
                 timestamp: now
             };
             this.peerManager.sendDataToPeers({ streamType: "move", payload: moveData });
