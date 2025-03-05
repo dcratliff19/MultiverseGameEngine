@@ -94,17 +94,19 @@ export class PeerManager {
     receiveData(data) {
         const { streamType, payload } = data;
         if (this.streamManagers[streamType]) {
+            this.streamManagers[streamType].handleIncomingData(payload);
             if (this.isHost && streamType === "move") {
-                this.pendingMoves.push(payload);
-                this.processPendingMoves();
-            } else {
-                this.streamManagers[streamType].handleIncomingData(payload);
-            }
-            if (this.isHost && streamType === "ghost") {
-                this.processPendingMoves();
+                this.streamManagers.ghost.sendUpdate();
             }
         } else if (streamType === "datablock") {
             this.applyFullState(payload);
+        } else if (streamType === "tickRequest" && this.isHost) {
+            console.log(`Received tick request from ${payload.id}`);
+            const state = this.game.getState();
+            this.sendDataToPeers({ streamType: "tickResponse", payload: state });
+        } else if (streamType === "tickResponse" && !this.isHost) {
+            console.log("Received tick response from host:", payload);
+            this.applyTickState(payload); // New method to handle teleport
         }
     }
 
@@ -142,6 +144,32 @@ export class PeerManager {
                         );
                     }
                     const player = this.game.remotePlayers[obj.name.split('-')[1]];
+                    player.mesh.position.set(...obj.position);
+                    player.physicsBody.setLinearVelocity(new BABYLON.Vector3(...obj.velocity));
+                }
+            });
+        }
+    }
+
+    // In PeerManager.js
+    applyTickState(state) {
+        if (!this.isHost) {
+            this.game.player.mesh.position.set(...state.player.position);
+            this.game.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(...state.player.velocity)); // Use host’s velocity
+            console.log("Teleported client to host position:", state.player.position);
+    
+            state.objects.forEach((obj) => {
+                if (obj.name !== `player-${this.peer.id}`) {
+                    const playerId = obj.name.split('-')[1];
+                    if (!this.game.remotePlayers[playerId]) {
+                        this.game.remotePlayers[playerId] = new PhysicsObject(
+                            obj.name,
+                            this.game.scene,
+                            this.game.physicsPlugin,
+                            { position: new BABYLON.Vector3(...obj.position) }
+                        );
+                    }
+                    const player = this.game.remotePlayers[playerId];
                     player.mesh.position.set(...obj.position);
                     player.physicsBody.setLinearVelocity(new BABYLON.Vector3(...obj.velocity));
                 }

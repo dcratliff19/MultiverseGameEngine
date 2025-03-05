@@ -10,6 +10,8 @@ export class Game {
         this.isReady = false;
         this.remotePlayers = {};
         this.peerManager = null;
+        this.keysHeld = { w: false, s: false, a: false, d: false };
+        this.lastTickTime = 0;
         this.setupScene().then(() => {
             this.isReady = true;
             this.setupControls();
@@ -17,17 +19,14 @@ export class Game {
     }
 
     setPeerManager(peerManager) {
-        if (this.peerManager && !this.peerManager.isHost && this.isMultiplayer) {
-            this.player.setKinematic(true);
-        }
         this.peerManager = peerManager;
     }
 
     async setupScene() {
         try {
-            this.camera = new BABYLON.FreeCamera("camera", new BABYLON.Vector3(0, 5, -10), this.scene);
-            this.camera.setTarget(BABYLON.Vector3.Zero());
-            this.camera.attachControl(this.canvas, true);
+            // this.camera = new BABYLON.FreeCamera("camera", new BABYLON.Vector3(0, 5, -10), this.scene);
+            // this.camera.setTarget(BABYLON.Vector3.Zero());
+            // this.camera.attachControl(this.canvas, true);
 
             this.light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), this.scene);
             this.ground = BABYLON.MeshBuilder.CreateGround("ground", { width: 10, height: 10 }, this.scene);
@@ -49,13 +48,27 @@ export class Game {
             console.log("Ground aggregate created");
 
             this.player = new PhysicsObject("player", this.scene, this.physicsPlugin);
-            console.log("Player physics body:", this.player.physicsBody);
+
+            // Third-person camera
+            this.camera = new BABYLON.ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 2.5, 5, this.player.mesh.position, this.scene);
+            this.camera.attachControl(this.canvas, true);
+            this.scene.onBeforeRenderObservable.add(() => {
+                this.camera.target = this.player.mesh.position;
+            });
             this.remotePlayers = {};
 
-            // Add velocity reset for client in multiplayer
-            this.scene.onAfterPhysicsObservable.add(() => {
-                if (this.peerManager && !this.peerManager.isHost && this.isMultiplayer) {
-                    this.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(0, 0, 0));
+            // Pause/resume physics on tab out/in
+            document.addEventListener("visibilitychange", () => {
+                if (this.isReady && this.peerManager && !this.peerManager.isHost && this.isMultiplayer) {
+                    if (document.visibilityState === "hidden") {
+                        console.log("Client tabbed out, pausing physics");
+                        this.player.physicsBody.setMotionType(BABYLON.PhysicsMotionType.STATIC);
+                    } else {
+                        console.log("Client tabbed back in, resuming physics");
+                        this.player.physicsBody.setMotionType(BABYLON.PhysicsMotionType.DYNAMIC);
+                        // Request immediate sync from host
+                        this.peerManager.sendDataToPeers({ streamType: "tickRequest", payload: { id: this.peerManager.peer.id } });
+                    }
                 }
             });
 
@@ -69,25 +82,42 @@ export class Game {
 
     setupControls() {
         this.scene.onKeyboardObservable.add((kbInfo) => {
-            if (kbInfo.type === BABYLON.KeyboardEventTypes.KEYDOWN) {
-                const speed = 10;
-                let impulse;
-                switch (kbInfo.event.key) {
-                    case "w": impulse = new BABYLON.Vector3(0, 0, speed); break;
-                    case "s": impulse = new BABYLON.Vector3(0, 0, -speed); break;
-                    case "a": impulse = new BABYLON.Vector3(-speed, 0, 0); break;
-                    case "d": impulse = new BABYLON.Vector3(speed, 0, 0); break;
+            const key = kbInfo.event.key.toLowerCase();
+            if (this.keysHeld.hasOwnProperty(key)) {
+                this.keysHeld[key] = kbInfo.type === BABYLON.KeyboardEventTypes.KEYDOWN;
+            }
+        });
+
+        this.scene.onBeforeRenderObservable.add(() => {
+            const speed = 5;
+            let velocity = new BABYLON.Vector3(0, 0, 0);
+            if (this.keysHeld.w) velocity.z = speed;
+            if (this.keysHeld.s) velocity.z = -speed;
+            if (this.keysHeld.a) velocity.x = -speed;
+            if (this.keysHeld.d) velocity.x = speed;
+
+            if (velocity.length() > speed) {
+                velocity = velocity.normalize().scale(speed);
+            }
+
+            const now = Date.now();
+            if (velocity.length() > 0 || (this.keysHeld.w || this.keysHeld.s || this.keysHeld.a || this.keysHeld.d)) {
+                if (!this.peerManager || this.peerManager.isHost || !this.peerManager.isMultiplayer) {
+                    const currentVelocity = this.player.physicsBody.getLinearVelocity();
+                    this.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(velocity.x, currentVelocity.y, velocity.z));
                 }
-                if (impulse) {
-                    // Apply impulse locally only if host, otherwise wait for host sync
-                    if (!this.peerManager || this.peerManager.isHost || !this.peerManager.isMultiplayer) {
-                        this.player.applyImpulse(impulse, this.player.mesh.position);
-                    }
-                    if (this.peerManager && this.peerManager.isMultiplayer) {
-                        console.log("Sending move from client:", impulse.asArray());
-                        this.peerManager.streamManagers.move.sendMove(impulse);
-                    }
-                    this.stateManager.logEvent("impulse", { impulse: impulse.asArray(), position: this.player.mesh.position.asArray() });
+                if (this.peerManager && this.peerManager.isMultiplayer) {
+                    console.log("Sending velocity from client:", velocity.asArray());
+                    this.peerManager.streamManagers.move.sendMove(velocity);
+                }
+                this.stateManager.logEvent("velocity", { velocity: velocity.asArray(), position: this.player.mesh.position.asArray() });
+            }
+
+            // Client tick request every 100ms
+            if (this.peerManager && !this.peerManager.isHost && this.isMultiplayer) {
+                if (!this.lastTickTime || now - this.lastTickTime >= 100) {
+                    this.peerManager.sendDataToPeers({ streamType: "tickRequest", payload: { id: this.peerManager.peer.id } });
+                    this.lastTickTime = now;
                 }
             }
         });
