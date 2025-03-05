@@ -150,15 +150,14 @@ export class PeerManager {
             });
         }
     }
-    
+
+    // In PeerManager.js
     applyTickState(state) {
         if (!this.isHost) {
-            // Update local player with teleport
             this.game.player.mesh.position.set(...state.player.position);
-            this.game.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(...state.player.velocity));
+            this.game.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(...state.player.velocity)); // Use host’s velocity
             console.log("Teleported client to host position:", state.player.position);
     
-            // Update remote players
             state.objects.forEach((obj) => {
                 if (obj.name !== `player-${this.peer.id}`) {
                     const playerId = obj.name.split('-')[1];
