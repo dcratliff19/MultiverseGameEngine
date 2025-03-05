@@ -10,7 +10,8 @@ export class Game {
         this.isReady = false;
         this.remotePlayers = {};
         this.peerManager = null;
-        this.keysHeld = { w: false, s: false, a: false, d: false }; // Track held keys
+        this.keysHeld = { w: false, s: false, a: false, d: false };
+        this.lastTickTime = 0; // For tick requests
         this.setupScene().then(() => {
             this.isReady = true;
             this.setupControls();
@@ -55,6 +56,14 @@ export class Game {
                 }
             });
 
+            // Add focus event listener for teleport sync
+            document.addEventListener("visibilitychange", () => {
+                if (document.visibilityState === "visible" && this.peerManager && !this.peerManager.isHost && this.isMultiplayer) {
+                    console.log("Client regained focus, requesting full state from host");
+                    this.peerManager.sendDataToPeers({ streamType: "tickRequest", payload: { id: this.peerManager.peer.id } });
+                }
+            });
+
             this.engine.runRenderLoop(() => this.scene.render());
         } catch (error) {
             console.error("Failed to load Havok:", error);
@@ -64,36 +73,26 @@ export class Game {
     }
 
     setupControls() {
-        // Track key states
         this.scene.onKeyboardObservable.add((kbInfo) => {
             const key = kbInfo.event.key.toLowerCase();
-            if (kbInfo.type === BABYLON.KeyboardEventTypes.KEYDOWN) {
-                if (this.keysHeld.hasOwnProperty(key)) {
-                    this.keysHeld[key] = true;
-                }
-            } else if (kbInfo.type === BABYLON.KeyboardEventTypes.KEYUP) {
-                if (this.keysHeld.hasOwnProperty(key)) {
-                    this.keysHeld[key] = false;
-                }
+            if (this.keysHeld.hasOwnProperty(key)) {
+                this.keysHeld[key] = kbInfo.type === BABYLON.KeyboardEventTypes.KEYDOWN;
             }
         });
 
-        // Update velocity every frame based on held keys
         this.scene.onBeforeRenderObservable.add(() => {
-            const speed = 5; // Adjust for desired movement speed
+            const speed = 5;
             let velocity = new BABYLON.Vector3(0, 0, 0);
-
             if (this.keysHeld.w) velocity.z = speed;
             if (this.keysHeld.s) velocity.z = -speed;
             if (this.keysHeld.a) velocity.x = -speed;
             if (this.keysHeld.d) velocity.x = speed;
 
-            // Normalize diagonal movement to maintain consistent speed
             if (velocity.length() > speed) {
                 velocity = velocity.normalize().scale(speed);
             }
 
-            // Apply velocity and send to host if in multiplayer
+            const now = Date.now();
             if (velocity.length() > 0 || (this.keysHeld.w || this.keysHeld.s || this.keysHeld.a || this.keysHeld.d)) {
                 if (!this.peerManager || this.peerManager.isHost || !this.peerManager.isMultiplayer) {
                     this.player.physicsBody.setLinearVelocity(velocity);
@@ -103,6 +102,14 @@ export class Game {
                     this.peerManager.streamManagers.move.sendMove(velocity);
                 }
                 this.stateManager.logEvent("velocity", { velocity: velocity.asArray(), position: this.player.mesh.position.asArray() });
+            }
+
+            // Client tick request every 100ms
+            if (this.peerManager && !this.peerManager.isHost && this.isMultiplayer) {
+                if (!this.lastTickTime || now - this.lastTickTime >= 100) {
+                    this.peerManager.sendDataToPeers({ streamType: "tickRequest", payload: { id: this.peerManager.peer.id } });
+                    this.lastTickTime = now;
+                }
             }
         });
     }
