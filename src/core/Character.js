@@ -1,5 +1,4 @@
-
-class Character {
+export class Character {
     constructor(mesh, scene, physicsPlugin, animationController) {
         this.mesh = mesh;
         this.scene = scene;
@@ -7,65 +6,79 @@ class Character {
         this.yaw = Math.PI;
         this.walkSpeed = 5;
         this.runSpeed = 10;
-        this.jumpForce = 4;
-        this.isGrounded = true;
+        this.jumpForce = 6;
+        this.isGrounded = false; // Start false until checked
         this.isPunching = false;
-        this.isJumping = false;  // Track jump state
-        this.jumpDelay = 0.7;  // Delay in seconds before physics jump
+        this.isJumping = false;
 
         this.setupPhysics(physicsPlugin);
         this.setupRotation();
     }
 
     setupPhysics(physicsPlugin) {
-        this.aggregate = new BABYLON.PhysicsAggregate(this.mesh, BABYLON.PhysicsShapeType.BOX, {
+        const boundingInfo = this.mesh.getBoundingInfo();
+        const height = boundingInfo.boundingBox.maximum.y - boundingInfo.boundingBox.minimum.y;
+        const width = boundingInfo.boundingBox.maximum.x - boundingInfo.boundingBox.minimum.x;
+        const depth = boundingInfo.boundingBox.maximum.z - boundingInfo.boundingBox.minimum.z;
+        const radius = Math.max(width, depth) / 2;
+
+        this.aggregate = new BABYLON.PhysicsAggregate(this.mesh, BABYLON.PhysicsShapeType.CAPSULE, {
             mass: 1,
             restitution: 0.1,
-            extents: new BABYLON.Vector3(1, 2, 1)
+            friction: 0.5,
+            radius: radius,
+            height: height
         }, this.scene);
+
         this.aggregate.body.setAngularVelocity(new BABYLON.Vector3(0, 0, 0));
-        this.aggregate.body.disablePreStep = false;
+        this.aggregate.body.setLinearDamping(0.8);
+        this.aggregate.body.setAngularDamping(0.99);
+        this.aggregate.body.setMotionType(BABYLON.PhysicsMotionType.DYNAMIC); // Force dynamic from start
     }
 
     setupRotation() {
         this.mesh.rotationQuaternion = BABYLON.Quaternion.RotationYawPitchRoll(this.yaw, 0, 0);
+        this.aggregate.body.transformNode.rotationQuaternion = this.mesh.rotationQuaternion;
     }
 
     updateRotation(deltaX) {
         this.yaw += deltaX * 0.005;
-        this.mesh.rotationQuaternion = BABYLON.Quaternion.RotationYawPitchRoll(this.yaw, 0, 0);
-        this.aggregate.body.transformNode.rotationQuaternion = this.mesh.rotationQuaternion;
+        const desiredRotation = BABYLON.Quaternion.RotationYawPitchRoll(this.yaw, 0, 0);
+        this.mesh.rotationQuaternion = desiredRotation;
+        this.aggregate.body.transformNode.rotationQuaternion = desiredRotation;
+        this.aggregate.body.setAngularVelocity(new BABYLON.Vector3(0, 0, 0));
     }
 
     checkGround() {
+        const boundingInfo = this.mesh.getBoundingInfo();
+        const height = boundingInfo.boundingBox.maximum.y - boundingInfo.boundingBox.minimum.y;
         const rayOrigin = this.mesh.position.clone();
-        rayOrigin.y += 0.1;
-        const ray = new BABYLON.Ray(rayOrigin, new BABYLON.Vector3(0, -1, 0), 2.2);
-        const hit = this.scene.pickWithRay(ray);
+        rayOrigin.y -= (height / 2); // Start at capsule bottom
+        const ray = new BABYLON.Ray(rayOrigin, new BABYLON.Vector3(0, -1, 0), height / 2); // Ray length half height
+        const hit = this.scene.pickWithRay(ray, (mesh) => mesh === this.scene.getMeshByName("ground"));
         const velocity = this.aggregate.body.getLinearVelocity();
-        return hit.hit && hit.pickedMesh.name === "ground" && Math.abs(velocity.y) < 0.1;
+        console.log("Ray origin:", rayOrigin.y, "Ray hit:", hit ? hit.hit : "no hit", "Distance:", hit?.distance);
+        return hit && hit.hit && Math.abs(velocity.y) < 0.2;
     }
 
     move(direction, speed) {
         const velocity = this.aggregate.body.getLinearVelocity();
-        velocity.x = direction.x * speed;
-        velocity.z = direction.z * speed;
-        this.aggregate.body.setLinearVelocity(velocity);
+        const newVelocity = new BABYLON.Vector3(direction.x * speed, velocity.y, direction.z * speed);
+        const maxSpeed = speed;
+        if (newVelocity.length() > maxSpeed) {
+            newVelocity.normalize().scaleInPlace(maxSpeed);
+        }
+        this.aggregate.body.setLinearVelocity(newVelocity);
     }
 
     jump() {
         if (this.isGrounded && !this.isPunching && !this.isJumping) {
             this.isJumping = true;
             this.animationController.playAnimation("jump");
-            // Delay physics jump to sync with animation
-            setTimeout(() => {
-                if (this.isJumping) {
-                    const velocity = this.aggregate.body.getLinearVelocity();
-                    velocity.y = this.jumpForce;
-                    this.aggregate.body.setLinearVelocity(velocity);
-                    this.isGrounded = false;
-                }
-            }, this.jumpDelay * 1000);  // Convert to milliseconds
+            const velocity = this.aggregate.body.getLinearVelocity();
+            velocity.y = 6;
+            this.aggregate.body.setLinearVelocity(velocity);
+            this.isGrounded = false;
         }
     }
 }
