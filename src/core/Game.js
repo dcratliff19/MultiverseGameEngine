@@ -12,6 +12,7 @@ export class Game {
         this.peerManager = null;
         this.keysHeld = { w: false, s: false, a: false, d: false };
         this.lastTickTime = 0;
+
         this.setupScene().then(() => {
             this.isReady = true;
             this.setupControls();
@@ -24,13 +25,7 @@ export class Game {
 
     async setupScene() {
         try {
-            // this.camera = new BABYLON.FreeCamera("camera", new BABYLON.Vector3(0, 5, -10), this.scene);
-            // this.camera.setTarget(BABYLON.Vector3.Zero());
-            // this.camera.attachControl(this.canvas, true);
-
             this.light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), this.scene);
-            this.ground = BABYLON.MeshBuilder.CreateGround("ground", { width: 10, height: 10 }, this.scene);
-            this.ground.position.y = -1;
 
             console.log("Attempting to load Havok via CDN...");
             const havok = await HavokPhysics();
@@ -38,23 +33,54 @@ export class Game {
                 throw new Error("HavokPhysics() returned undefined or null");
             }
             console.log("Havok loaded successfully:", havok);
-            this.physicsPlugin = new BABYLON.HavokPlugin(true, havok);
-            console.log("Physics plugin created:", this.physicsPlugin);
 
+            this.physicsPlugin = new BABYLON.HavokPlugin(true, havok);
             this.scene.enablePhysics(new BABYLON.Vector3(0, -9.81, 0), this.physicsPlugin);
             console.log("Physics enabled on scene");
 
-            this.groundAggregate = new BABYLON.PhysicsAggregate(this.ground, BABYLON.PhysicsShapeType.BOX, { mass: 0 }, this.scene);
-            console.log("Ground aggregate created");
+            // Load the map model (cs_assault.glb)
+            console.log("Loading ground model cs_assault.glb");
+            const groundResult = await BABYLON.SceneLoader.ImportMeshAsync(
+                "", 
+                "assets/", // Path to your model
+                "cs_assault.glb", 
+                this.scene
+            );
 
+            // Filter only meshes with valid vertices
+            const validMeshes = groundResult.meshes.filter(mesh => mesh.getTotalVertices() > 0);
+            if (validMeshes.length === 0) {
+                throw new Error("No valid mesh with vertices found in cs_assault.glb");
+            }
+
+            // If multiple meshes exist, merge them into one
+            if (validMeshes.length > 1) {
+                this.ground = BABYLON.Mesh.MergeMeshes(validMeshes, true, true, undefined, false, true);
+            } else {
+                this.ground = validMeshes[0];
+            }
+
+            this.ground.position.y = -1; // Adjust position if necessary
+
+            // Apply mesh physics
+            this.groundAggregate = new BABYLON.PhysicsAggregate(
+                this.ground,
+                BABYLON.PhysicsShapeType.MESH,
+                { mass: 0 },
+                this.scene
+            );
+            console.log("Ground physics applied");
+
+            // Create the player object
             this.player = new PhysicsObject("player", this.scene, this.physicsPlugin);
 
-            // Third-person camera
+            // Third-person camera setup
             this.camera = new BABYLON.ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 2.5, 5, this.player.mesh.position, this.scene);
             this.camera.attachControl(this.canvas, true);
             this.scene.onBeforeRenderObservable.add(() => {
                 this.camera.target = this.player.mesh.position;
             });
+
             this.remotePlayers = {};
 
             // Pause/resume physics on tab out/in
@@ -66,7 +92,6 @@ export class Game {
                     } else {
                         console.log("Client tabbed back in, resuming physics");
                         this.player.physicsBody.setMotionType(BABYLON.PhysicsMotionType.DYNAMIC);
-                        // Request immediate sync from host
                         this.peerManager.sendDataToPeers({ streamType: "tickRequest", payload: { id: this.peerManager.peer.id } });
                     }
                 }
@@ -74,7 +99,7 @@ export class Game {
 
             this.engine.runRenderLoop(() => this.scene.render());
         } catch (error) {
-            console.error("Failed to load Havok:", error);
+            console.error("Failed to load Havok or cs_assault.glb:", error);
             console.error("Error stack:", error.stack);
             this.engine.runRenderLoop(() => this.scene.render());
         }
@@ -101,7 +126,7 @@ export class Game {
             }
 
             const now = Date.now();
-            if (velocity.length() > 0 || (this.keysHeld.w || this.keysHeld.s || this.keysHeld.a || this.keysHeld.d)) {
+            if (velocity.length() > 0 || Object.values(this.keysHeld).some(v => v)) {
                 if (!this.peerManager || this.peerManager.isHost || !this.peerManager.isMultiplayer) {
                     const currentVelocity = this.player.physicsBody.getLinearVelocity();
                     this.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(velocity.x, currentVelocity.y, velocity.z));
