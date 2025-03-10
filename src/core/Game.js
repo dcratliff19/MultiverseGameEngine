@@ -15,6 +15,10 @@ export class Game {
         this.spawnPoint = new BABYLON.Vector3(0, 5, 0); // Starting position above ground
         this.yThreshold = -50; // Teleport threshold
         this.isFirstPerson = true; // Start in first-person mode
+        this.fireRate = 0.2; // Shots per second (5 shots/sec for Desert Eagle)
+        this.lastShotTime = 0;
+        this.bulletSpeed = 300; // Meters per second
+        this.bulletRange = 100; // Max distance
 
         this.setupScene().then(() => {
             this.isReady = true;
@@ -72,7 +76,7 @@ export class Game {
             this.player = new PhysicsObject("player", this.scene, this.physicsPlugin);
             this.player.mesh.position.copyFrom(this.spawnPoint);
             this.player.physicsBody.setGravityFactor(2); // Match provided example
-
+            await this.loadGun(); // Add this line
             this.remotePlayers = {};
 
             // Pause/resume physics on tab out/in
@@ -97,6 +101,142 @@ export class Game {
         }
     }
 
+    async loadGun() {
+        try {
+            console.log("Loading Desert Eagle model...");
+            const gunResult = await BABYLON.SceneLoader.ImportMeshAsync("", "assets/", "deagle.glb", this.scene);
+            this.gun = gunResult.meshes[0]; // Root mesh of the gun
+            this.gun.scaling = new BABYLON.Vector3(1.5, 1.5, 1.5); // Bigger gun (was 0.1)
+            this.gun.rotationQuaternion = new BABYLON.Quaternion(); // For physics compatibility
+    
+            // Parent the gun and adjust position
+            this.updateGunParenting();
+    
+            console.log("Big-ass Desert Eagle loaded and attached");
+        } catch (error) {
+            console.error("Failed to load Desert Eagle:", error);
+        }
+    }
+
+    handleHit(hit) {
+        const hitMesh = hit.pickedMesh;
+        if (hitMesh === this.ground) {
+            // Hit the ground, maybe add a decal
+            const decal = BABYLON.MeshBuilder.CreateDecal("bulletDecal", hitMesh, {
+                position: hit.pickedPoint,
+                normal: hit.normal,
+                size: new BABYLON.Vector3(0.5, 0.5, 0.5)
+            });
+            decal.material = new BABYLON.StandardMaterial("decalMat", this.scene);
+            decal.material.diffuseColor = new BABYLON.Color3(0.5, 0.5, 0.5);
+            setTimeout(() => decal.dispose(), 5000); // Remove decal after 5s
+        } else if (hitMesh.name.startsWith("player-")) {
+            // Hit a remote player
+            const playerId = hitMesh.name.split("player-")[1];
+            console.log(`Hit remote player ${playerId}`);
+            // Apply damage or knockback (host only)
+            if (this.peerManager && this.peerManager.isHost) {
+                const remotePlayer = this.remotePlayers[playerId];
+                if (remotePlayer) {
+                    const impulse = hit.ray.direction.scale(10); // Knockback force
+                    remotePlayer.physicsBody.applyImpulse(impulse, hit.pickedPoint);
+                    this.peerManager.streamManagers.ghost.sendUpdate();
+                }
+            }
+        }
+    }
+
+    applyRecoil() {
+        if (this.isFirstPerson) {
+            this.fpCamera.rotation.x -= 0.05; // Slight upward kick
+            setTimeout(() => this.fpCamera.rotation.x += 0.03, 100); // Recover partially
+        }
+    }
+
+    shoot() {
+        const now = Date.now() / 1000; // Convert to seconds
+        if (now - this.lastShotTime < this.fireRate) return; // Enforce fire rate
+        this.lastShotTime = now;
+    
+        // Get shooting direction from active camera
+        const ray = this.scene.activeCamera.getForwardRay(this.bulletRange);
+        const origin = ray.origin.clone();
+        const direction = ray.direction.clone();
+    
+        // Visual feedback: Spawn a bullet (simple sphere for now)
+        const bullet = BABYLON.MeshBuilder.CreateSphere("bullet", { diameter: 0.1 }, this.scene);
+        bullet.position = origin.clone();
+        const bulletBody = new BABYLON.PhysicsAggregate(bullet, BABYLON.PhysicsShapeType.SPHERE, { mass: 0.1 }, this.scene);
+        bulletBody.body.setLinearVelocity(direction.scale(this.bulletSpeed));
+        setTimeout(() => bullet.dispose(), 1000); // Remove bullet after 1s
+    
+        // Raycast for hit detection
+        const hit = this.scene.pickWithRay(ray);
+        if (hit && hit.hit) {
+            console.log("Shot hit:", hit.pickedMesh.name, "at", hit.pickedPoint.asArray());
+            this.handleHit(hit);
+        }
+    
+        // Multiplayer sync
+        if (this.peerManager && this.peerManager.isMultiplayer) {
+            this.peerManager.sendDataToPeers({
+                streamType: "shoot",
+                payload: {
+                    id: this.peerManager.peer.id,
+                    origin: origin.asArray(),
+                    direction: direction.asArray(),
+                    timestamp: now
+                }
+            });
+        }
+    
+        // Optional: Add recoil or animation
+        this.applyRecoil();
+    }
+    
+    updateGunParenting() {
+        if (!this.gun) return;
+        if (this.isFirstPerson) {
+            this.gun.parent = this.fpCamera;
+            this.gun.position = new BABYLON.Vector3(0.6, -0.3, 1.5); // Shift right, down, and forward more (was 0.2, -0.1, 0.5)
+            this.gun.rotation = new BABYLON.Vector3(0, 0, 0); // Reset rotation relative to camera
+        } else {
+            this.gun.parent = this.player.mesh;
+            this.gun.position = new BABYLON.Vector3(1.5, 1.5, 0); // Shift right and up more (was 0.5, 1, 0)
+            this.gun.rotation = new BABYLON.Vector3(0, Math.PI, 0); // Face forward
+        }
+    }
+
+    handlePeerShoot(data) {
+        const { id, origin, direction, timestamp } = data.payload;
+        if (id === this.peerManager.peer.id) return; // Ignore own shots
+    
+        // Simulate bullet for visual feedback
+        const bullet = BABYLON.MeshBuilder.CreateSphere(`bullet-${id}-${timestamp}`, { diameter: 0.1 }, this.scene);
+        bullet.position = BABYLON.Vector3.FromArray(origin);
+        const bulletBody = new BABYLON.PhysicsAggregate(bullet, BABYLON.PhysicsShapeType.SPHERE, { mass: 0.1 }, this.scene);
+        bulletBody.body.setLinearVelocity(BABYLON.Vector3.FromArray(direction).scale(this.bulletSpeed));
+        setTimeout(() => bullet.dispose(), 1000);
+    
+        // Host handles hit detection and syncs results
+        if (this.peerManager.isHost) {
+            const ray = new BABYLON.Ray(BABYLON.Vector3.FromArray(origin), BABYLON.Vector3.FromArray(direction), this.bulletRange);
+            const hit = this.scene.pickWithRay(ray);
+            if (hit && hit.hit) {
+                this.handleHit(hit);
+            }
+        }
+    }
+
+    setPeerManager(peerManager) {
+        this.peerManager = peerManager;
+        this.peerManager.onData((data) => {
+            if (data.streamType === "shoot") {
+                this.handlePeerShoot(data);
+            }
+        });
+    }
+
     setupControls() {
         // Enable pointer lock for first-person mode
         if (this.isFirstPerson) this.createPointerLock();
@@ -104,10 +244,16 @@ export class Game {
         // Key event listeners using window instead of scene observable
         window.addEventListener("keydown", (event) => {
             this.keysHeld[event.code] = true;
-            if (event.code === "KeyV") { // Toggle between first and third person
+            if (event.code === "KeyV") {
                 this.isFirstPerson = !this.isFirstPerson;
                 this.scene.activeCamera = this.isFirstPerson ? this.fpCamera : this.tpCamera;
                 if (this.isFirstPerson) this.createPointerLock();
+                this.updateGunParenting(); // Add this line
+            }
+        });
+        window.addEventListener("mousedown", (event) => {
+            if (event.button === 0 && document.pointerLockElement === this.canvas) { // Left click in pointer lock
+                this.shoot();
             }
         });
         window.addEventListener("keyup", (event) => {
