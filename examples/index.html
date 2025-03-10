@@ -83,6 +83,7 @@ class AnimationController {
         if (this.animations[animationName]) {
             this.currentAnim?.stop();
             this.animations[animationName].play(loop);
+            
             this.currentAnim = this.animations[animationName];
         }
     }
