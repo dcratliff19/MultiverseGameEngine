@@ -22,7 +22,7 @@ The **Multiverse Game Engine** is an evolving framework for creating 3D multipla
 - **Git**: For version control.
 
 ## Directory Structure
-
+```
 babylon-p2p-game/
 ├── dist/                    # (Generated) Production build output
 ├── node_modules/            # (Generated) Installed dependencies
@@ -47,7 +47,7 @@ babylon-p2p-game/
 ├── package.json             # Node.js project config
 ├── vite.config.js           # Vite configuration
 └── README.md                # This file
-
+```
 ## Development Roadmap
 
 ### Phase 1: Core Setup (Complete as of Feb 26, 2025)
