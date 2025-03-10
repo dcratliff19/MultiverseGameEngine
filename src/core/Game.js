@@ -230,7 +230,8 @@ export class Game {
 
     setPeerManager(peerManager) {
         this.peerManager = peerManager;
-        this.peerManager.onData((data) => {
+        // Register the shoot handler with PeerManager
+        this.peerManager.registerGameCallback((data) => {
             if (data.streamType === "shoot") {
                 this.handlePeerShoot(data);
             }

@@ -20,6 +20,12 @@ export class PeerManager {
         };
         this.pendingMoves = [];
         this.setupSync();
+        this.gameCallback = null; // Store Game’s callback
+    }
+
+    // Add this method to let Game register its handler
+    registerGameCallback(callback) {
+        this.gameCallback = callback;
     }
 
     startAsHost(customId) {
@@ -106,7 +112,12 @@ export class PeerManager {
             this.sendDataToPeers({ streamType: "tickResponse", payload: state });
         } else if (streamType === "tickResponse" && !this.isHost) {
             console.log("Received tick response from host:", payload);
-            this.applyTickState(payload); // New method to handle teleport
+            this.applyTickState(payload);
+        }
+
+        // Forward specific stream types to Game
+        if (this.gameCallback && streamType === "shoot") {
+            this.gameCallback(data);
         }
     }
 
