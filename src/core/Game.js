@@ -10,8 +10,11 @@ export class Game {
         this.isReady = false;
         this.remotePlayers = {};
         this.peerManager = null;
-        this.keysHeld = { w: false, s: false, a: false, d: false };
+        this.keysHeld = {}; // Tracks all keys dynamically
         this.lastTickTime = 0;
+        this.spawnPoint = new BABYLON.Vector3(0, 5, 0); // Starting position above ground
+        this.yThreshold = -50; // Teleport threshold
+        this.isFirstPerson = true; // Start in first-person mode
 
         this.setupScene().then(() => {
             this.isReady = true;
@@ -25,13 +28,23 @@ export class Game {
 
     async setupScene() {
         try {
+            // First-Person Camera
+            this.fpCamera = new BABYLON.UniversalCamera("fpCamera", this.spawnPoint, this.scene);
+            this.fpCamera.minZ = 0;
+            this.fpCamera.attachControl(this.canvas, true);
+
+            // Third-Person Camera
+            this.tpCamera = new BABYLON.ArcRotateCamera("tpCamera", -Math.PI / 2, Math.PI / 2.5, 5, this.spawnPoint, this.scene);
+            this.tpCamera.attachControl(this.canvas, true);
+
+            // Set initial active camera
+            this.scene.activeCamera = this.isFirstPerson ? this.fpCamera : this.tpCamera;
+
             this.light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), this.scene);
 
             console.log("Attempting to load Havok via CDN...");
             const havok = await HavokPhysics();
-            if (!havok) {
-                throw new Error("HavokPhysics() returned undefined or null");
-            }
+            if (!havok) throw new Error("HavokPhysics() returned undefined or null");
             console.log("Havok loaded successfully:", havok);
 
             this.physicsPlugin = new BABYLON.HavokPlugin(true, havok);
@@ -40,46 +53,25 @@ export class Game {
 
             // Load the map model (cs_assault.glb)
             console.log("Loading ground model cs_assault.glb");
-            const groundResult = await BABYLON.SceneLoader.ImportMeshAsync(
-                "", 
-                "assets/", // Path to your model
-                "cs_assault.glb", 
-                this.scene
-            );
+            const groundResult = await BABYLON.SceneLoader.ImportMeshAsync("", "assets/", "cs_assault.glb", this.scene);
 
             // Filter only meshes with valid vertices
             const validMeshes = groundResult.meshes.filter(mesh => mesh.getTotalVertices() > 0);
-            if (validMeshes.length === 0) {
-                throw new Error("No valid mesh with vertices found in cs_assault.glb");
-            }
+            if (validMeshes.length === 0) throw new Error("No valid mesh with vertices found in cs_assault.glb");
 
-            // If multiple meshes exist, merge them into one
-            if (validMeshes.length > 1) {
-                this.ground = BABYLON.Mesh.MergeMeshes(validMeshes, true, true, undefined, false, true);
-            } else {
-                this.ground = validMeshes[0];
-            }
-
+            // Merge meshes if multiple, or use the single valid mesh
+            this.ground = validMeshes.length > 1 ? BABYLON.Mesh.MergeMeshes(validMeshes, true, true, undefined, false, true) : validMeshes[0];
             this.ground.position.y = -1; // Adjust position if necessary
+            this.ground.scaling = new BABYLON.Vector3(1, 1, 1); // Match CS map scale
 
             // Apply mesh physics
-            this.groundAggregate = new BABYLON.PhysicsAggregate(
-                this.ground,
-                BABYLON.PhysicsShapeType.MESH,
-                { mass: 0 },
-                this.scene
-            );
+            this.groundAggregate = new BABYLON.PhysicsAggregate(this.ground, BABYLON.PhysicsShapeType.MESH, { mass: 0 }, this.scene);
             console.log("Ground physics applied");
 
             // Create the player object
             this.player = new PhysicsObject("player", this.scene, this.physicsPlugin);
-
-            // Third-person camera setup
-            this.camera = new BABYLON.ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 2.5, 5, this.player.mesh.position, this.scene);
-            this.camera.attachControl(this.canvas, true);
-            this.scene.onBeforeRenderObservable.add(() => {
-                this.camera.target = this.player.mesh.position;
-            });
+            this.player.mesh.position.copyFrom(this.spawnPoint);
+            this.player.physicsBody.setGravityFactor(2); // Match provided example
 
             this.remotePlayers = {};
 
@@ -106,36 +98,74 @@ export class Game {
     }
 
     setupControls() {
-        this.scene.onKeyboardObservable.add((kbInfo) => {
-            const key = kbInfo.event.key.toLowerCase();
-            if (this.keysHeld.hasOwnProperty(key)) {
-                this.keysHeld[key] = kbInfo.type === BABYLON.KeyboardEventTypes.KEYDOWN;
+        // Enable pointer lock for first-person mode
+        if (this.isFirstPerson) this.createPointerLock();
+
+        // Key event listeners using window instead of scene observable
+        window.addEventListener("keydown", (event) => {
+            this.keysHeld[event.code] = true;
+            if (event.code === "KeyV") { // Toggle between first and third person
+                this.isFirstPerson = !this.isFirstPerson;
+                this.scene.activeCamera = this.isFirstPerson ? this.fpCamera : this.tpCamera;
+                if (this.isFirstPerson) this.createPointerLock();
             }
+        });
+        window.addEventListener("keyup", (event) => {
+            this.keysHeld[event.code] = false;
         });
 
         this.scene.onBeforeRenderObservable.add(() => {
-            const speed = 5;
-            let velocity = new BABYLON.Vector3(0, 0, 0);
-            if (this.keysHeld.w) velocity.z = speed;
-            if (this.keysHeld.s) velocity.z = -speed;
-            if (this.keysHeld.a) velocity.x = -speed;
-            if (this.keysHeld.d) velocity.x = speed;
+            const deltaTime = this.scene.getEngine().getDeltaTime() / 1000;
+            const maxSpeed = 10; // Match provided movementSpeed
+            let direction = new BABYLON.Vector3(0, 0, 0);
 
-            if (velocity.length() > speed) {
-                velocity = velocity.normalize().scale(speed);
+            // Movement direction based on active camera
+            if (this.keysHeld["KeyW"]) direction.addInPlace(this.scene.activeCamera.getForwardRay().direction);
+            if (this.keysHeld["KeyS"]) direction.addInPlace(this.scene.activeCamera.getForwardRay().direction.negate());
+            if (this.keysHeld["KeyA"]) direction.addInPlace(BABYLON.Vector3.Cross(this.scene.activeCamera.getForwardRay().direction, this.scene.activeCamera.upVector).normalize());
+            if (this.keysHeld["KeyD"]) direction.addInPlace(BABYLON.Vector3.Cross(this.scene.activeCamera.getForwardRay().direction, this.scene.activeCamera.upVector).normalize().negate());
+
+            if (!direction.equals(BABYLON.Vector3.Zero())) {
+                direction = direction.normalize().scale(maxSpeed);
             }
 
             const now = Date.now();
-            if (velocity.length() > 0 || Object.values(this.keysHeld).some(v => v)) {
+            const isMoving = Object.values(this.keysHeld).some(v => v);
+            if (isMoving || direction.length() > 0) {
                 if (!this.peerManager || this.peerManager.isHost || !this.peerManager.isMultiplayer) {
                     const currentVelocity = this.player.physicsBody.getLinearVelocity();
-                    this.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(velocity.x, currentVelocity.y, velocity.z));
+                    this.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(direction.x, currentVelocity.y, direction.z));
                 }
                 if (this.peerManager && this.peerManager.isMultiplayer) {
-                    console.log("Sending velocity from client:", velocity.asArray());
-                    this.peerManager.streamManagers.move.sendMove(velocity);
+                    console.log("Sending velocity from client:", direction.asArray());
+                    this.peerManager.streamManagers.move.sendMove(direction);
                 }
-                this.stateManager.logEvent("velocity", { velocity: velocity.asArray(), position: this.player.mesh.position.asArray() });
+                this.stateManager.logEvent("velocity", { velocity: direction.asArray(), position: this.player.mesh.position.asArray() });
+            }
+
+            // Jump logic
+            if (this.keysHeld["Space"] && this.isOnGround()) {
+                const currentVelocity = this.player.physicsBody.getLinearVelocity();
+                this.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(currentVelocity.x, 9.8 * 1.5, currentVelocity.z)); // Match provided maxVerticalSpeed
+            }
+
+            // Teleport if below threshold (host only)
+            if (this.peerManager && this.peerManager.isHost && this.isMultiplayer) {
+                if (this.player.mesh.position.y < this.yThreshold) {
+                    console.log("Host fell below threshold, teleporting to spawn");
+                    this.player.mesh.position.copyFrom(this.spawnPoint);
+                    this.player.physicsBody.setLinearVelocity(new BABYLON.Vector3(0, 0, 0));
+                    this.peerManager.streamManagers.ghost.sendUpdate();
+                }
+                Object.keys(this.remotePlayers).forEach(id => {
+                    const player = this.remotePlayers[id];
+                    if (player.mesh.position.y < this.yThreshold) {
+                        console.log(`Remote player ${id} fell below threshold, teleporting to spawn`);
+                        player.mesh.position.copyFrom(this.spawnPoint);
+                        player.physicsBody.setLinearVelocity(new BABYLON.Vector3(0, 0, 0));
+                        this.peerManager.streamManagers.ghost.sendUpdate();
+                    }
+                });
             }
 
             // Client tick request every 100ms
@@ -145,7 +175,47 @@ export class Game {
                     this.lastTickTime = now;
                 }
             }
+
+            // Update camera position
+            if (this.isFirstPerson) {
+                this.fpCamera.position = this.player.mesh.position.add(new BABYLON.Vector3(0, 1, 0)); // Eye level
+            } else {
+                this.tpCamera.target = this.player.mesh.position;
+            }
         });
+    }
+
+    // Check if player is on the ground
+    isOnGround() {
+        const ray = new BABYLON.Ray(this.player.mesh.position, new BABYLON.Vector3(0, -1, 0), 1.1); // Adjust length based on player size
+        const hit = this.scene.pickWithRay(ray);
+        return hit && hit.hit;
+    }
+
+    // Pointer lock for first-person camera
+    createPointerLock() {
+        const canvas = this.scene.getEngine().getRenderingCanvas();
+        canvas.addEventListener("click", () => {
+            canvas.requestPointerLock = canvas.requestPointerLock || canvas.msRequestPointerLock || canvas.mozRequestPointerLock || canvas.webkitRequestPointerLock;
+            if (canvas.requestPointerLock) canvas.requestPointerLock();
+        });
+
+        const updateCameraRotation = (e) => {
+            const movementX = e.movementX || e.mozMovementX || e.webkitMovementX || 0;
+            const movementY = e.movementY || e.mozMovementY || e.webkitMovementY || 0;
+            const sensitivity = 0.0005; // Match provided example
+            this.fpCamera.rotation.y += movementX * sensitivity;
+            this.fpCamera.rotation.x += movementY * sensitivity;
+            this.fpCamera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.fpCamera.rotation.x));
+        };
+
+        document.addEventListener("pointerlockchange", () => {
+            if (document.pointerLockElement === canvas) {
+                document.addEventListener("mousemove", updateCameraRotation, false);
+            } else {
+                document.removeEventListener("mousemove", updateCameraRotation, false);
+            }
+        }, false);
     }
 
     lerpVector3(start, target, amount) {
@@ -157,9 +227,7 @@ export class Game {
     }
 
     getState() {
-        if (!this.isReady || !this.player) {
-            return null;
-        }
+        if (!this.isReady || !this.player) return null;
         const state = {
             player: {
                 position: this.player.mesh.position.asArray(),
