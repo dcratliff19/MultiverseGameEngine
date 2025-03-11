@@ -13,15 +13,47 @@ game.setPeerManager(peerManager);
 const lobbyUI = new LobbyUI(peerManager);
 const replay = new Replay(game);
 
+// Function to hide lobby and show HUD
+function showGameUI() {
+    console.log("Hiding lobby...");
+    lobbyUI.hide();
+    const lobby = document.getElementById("lobby");
+    if (lobby && lobby.style.display !== "none") {
+        lobby.style.display = "none"; // Force hide if not already hidden
+        console.log("Lobby forced hidden via style");
+    }
+    console.log("Showing HUD...");
+    document.getElementById("hud").style.display = "block";
+}
+
 // Expose functions to window for HTML buttons
 window.startSinglePlayer = () => {
-    lobbyUI.hide();
+    console.log("Starting single player...");
+    showGameUI();
     game.startSinglePlayer();
 };
-window.startMultiplayerAsHost = (myId) => peerManager.startAsHost(myId);
-window.joinMultiplayer = (peerId) => peerManager.join(peerId);
+
+window.startMultiplayerAsHost = (myId) => {
+    console.log("Starting as host with ID:", myId);
+    peerManager.startAsHost(myId).then(() => {
+        showGameUI();
+    }).catch((error) => {
+        console.error("Failed to start as host:", error);
+    });
+};
+
+window.joinMultiplayer = (peerId) => {
+    console.log("Joining peer:", peerId);
+    peerManager.join(peerId).then(() => {
+        showGameUI();
+    }).catch((error) => {
+        console.error("Failed to join multiplayer:", error);
+    });
+};
+
 window.startReplay = () => {
-    lobbyUI.hide();
+    console.log("Starting replay...");
+    showGameUI();
     replay.start();
 };
 
