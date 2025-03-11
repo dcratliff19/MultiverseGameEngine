@@ -8,6 +8,124 @@
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
     <script src="https://cdn.babylonjs.com/havok/HavokPhysics_umd.js"></script>
+    <!-- Google Fonts for Orbitron -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        #renderCanvas {
+            width: 100%;
+            height: 100vh;
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        #lobby {
+                position: fixed !important;
+                top: 50% !important;
+                left: 50% !important;
+                transform: translate(-50%, -50%) !important;
+                background: rgba(0, 0, 0, 0.8);
+                padding: 20px;
+                border-radius: 10px;
+                color: #fff;
+                font-family: 'Orbitron', sans-serif;
+                text-align: center;
+                z-index: 10;
+            }
+        #lobby.hidden {
+            display: none !important; /* Extra force to override any shenanigans */
+        }
+        #lobby button, #lobby input {
+            margin: 10px;
+            padding: 8px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 16px;
+            background: #00ffcc;
+            border: none;
+            border-radius: 5px;
+            color: #000;
+            cursor: pointer;
+        }
+        #lobby button:hover {
+            background: #ff0077;
+            color: #fff;
+        }
+        #lobby input {
+            background: #fff;
+            color: #000;
+        }
+        #hud {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: auto;
+            pointer-events: none;
+            font-family: 'Orbitron', sans-serif;
+            color: #fff;
+            text-shadow: 0 0 5px #00ffcc, 0 0 10px #00ffcc;
+            display: none;
+            z-index: 5;
+            text-align: center;
+        }
+        #ammo-display {
+            display: inline-block;
+            font-size: 24px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            border: 2px solid #00ffcc;
+            margin: 0 10px;
+        }
+        #gun-indicator {
+            display: inline-block;
+            font-size: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 8px;
+            border-radius: 5px;
+            border: 2px solid #ff0077;
+            margin: 0 10px;
+        }
+        #health-bar {
+            display: inline-block;
+            width: 200px;
+            height: 20px;
+            background: #333;
+            border: 2px solid #00ffcc;
+            border-radius: 5px;
+            vertical-align: middle;
+            margin: 0 10px;
+        }
+        #health-fill {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to right, #00ffcc, #00cc99);
+            border-radius: 3px;
+        }
+        #reload-indicator {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 18px;
+            color: #ff0077;
+            display: none;
+        }
+        @keyframes pulse {
+            0% { transform: translateX(-50%) scale(1); }
+            50% { transform: translateX(-50%) scale(1.05); }
+            100% { transform: translateX(-50%) scale(1); }
+        }
+        .reloading {
+            display: block;
+            animation: pulse 0.5s infinite;
+        }
+    </style>
 </head>
 <body>
     <div id="lobby">
@@ -20,6 +138,12 @@
         <p>Your ID: <span id="myId"></span></p>
     </div>
     <canvas id="renderCanvas"></canvas>
+    <div id="hud">
+        <div id="gun-indicator">Primary: Rifle</div>
+        <div id="ammo-display">30 / 90</div>
+        <div id="health-bar"><div id="health-fill"></div></div>
+        <div id="reload-indicator">RELOADING...</div>
+    </div>
     <script type="module" src="/src/main.js"></script>
 </body>
 </html>
