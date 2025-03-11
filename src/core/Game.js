@@ -26,6 +26,7 @@ export class Game {
             reloadIndicator: document.getElementById("reload-indicator")
         };
 
+        // Character controller params (from first version)
         this.state = "IN_AIR";
         this.inAirSpeed = 10.0;
         this.onGroundSpeed = 10.0;
@@ -42,7 +43,6 @@ export class Game {
             this.updateHUD(); // Initial HUD update
         });
     }
-
 
     setPeerManager(peerManager) {
         this.peerManager = peerManager;
@@ -127,8 +127,6 @@ export class Game {
             this.engine.runRenderLoop(() => this.scene.render());
         }
     }
-
-
 
     updateGunParenting() {
         if (this.inventory.primary && this.inventory.primary.mesh) {
@@ -255,14 +253,28 @@ export class Game {
         }
     }
 
+    // Updated from first version
     getNextState(supportInfo) {
-        if (supportInfo.supportedState === BABYLON.CharacterSupportedState.SUPPORTED) {
+        if (this.state === "IN_AIR") {
+            if (supportInfo.supportedState === BABYLON.CharacterSupportedState.SUPPORTED) {
+                return "ON_GROUND";
+            }
+            return "IN_AIR";
+        } else if (this.state === "ON_GROUND") {
+            if (supportInfo.supportedState !== BABYLON.CharacterSupportedState.SUPPORTED) {
+                return "IN_AIR";
+            }
+            if (this.wantJump) {
+                return "START_JUMP";
+            }
             return "ON_GROUND";
+        } else if (this.state === "START_JUMP") {
+            return "IN_AIR";
         }
-        if (this.state === "START_JUMP") return "IN_AIR";
-        return "IN_AIR";
+        return this.state; // Fallback
     }
 
+    // Updated from first version
     getDesiredVelocity(deltaTime, supportInfo, characterOrientation, currentVelocity) {
         const nextState = this.getNextState(supportInfo);
         if (nextState !== this.state) this.state = nextState;
@@ -351,18 +363,28 @@ export class Game {
             const dt = this.scene.getEngine().getDeltaTime() / 1000;
             if (!this.characterController) return;
 
+            // Update player mesh position from character controller (from first version)
             this.playerMesh.position.copyFrom(this.characterController.getPosition());
 
+            // Update camera position and character orientation (from first version)
             if (this.isFirstPerson) {
                 this.fpCamera.position.copyFrom(this.playerMesh.position);
-                this.fpCamera.position.y += this.h / 2;
+                this.fpCamera.position.y += this.h / 2; // Eye level at capsule center
+                BABYLON.Quaternion.FromEulerAnglesToRef(0, this.fpCamera.rotation.y, 0, this.characterOrientation);
             } else {
                 this.tpCamera.target.copyFrom(this.playerMesh.position);
+                const forward = this.tpCamera.getForwardRay().direction;
+                forward.y = 0; // Keep it horizontal
+                forward.normalize();
+                const yaw = Math.atan2(forward.x, forward.z);
+                BABYLON.Quaternion.RotationAxisToRef(BABYLON.Axis.Y, yaw, this.characterOrientation);
             }
+
+            // Sync the player mesh rotation with characterOrientation (from first version)
+            this.playerMesh.rotationQuaternion = this.characterOrientation.clone();
 
             const down = new BABYLON.Vector3(0, -1, 0);
             const support = this.characterController.checkSupport(dt, down);
-            BABYLON.Quaternion.FromEulerAnglesToRef(0, this.fpCamera.rotation.y, 0, this.characterOrientation);
             const currentVelocity = this.characterController.getVelocity();
             const desiredVelocity = this.getDesiredVelocity(dt, support, this.characterOrientation, currentVelocity);
 
