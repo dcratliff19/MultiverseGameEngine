@@ -223,11 +223,23 @@ export class Game {
     }
 
     getNextState(supportInfo) {
-        if (supportInfo.supportedState === BABYLON.CharacterSupportedState.SUPPORTED) {
+        if (this.state === "IN_AIR") {
+            if (supportInfo.supportedState === BABYLON.CharacterSupportedState.SUPPORTED) {
+                return "ON_GROUND";
+            }
+            return "IN_AIR";
+        } else if (this.state === "ON_GROUND") {
+            if (supportInfo.supportedState !== BABYLON.CharacterSupportedState.SUPPORTED) {
+                return "IN_AIR";
+            }
+            if (this.wantJump) {
+                return "START_JUMP";
+            }
             return "ON_GROUND";
+        } else if (this.state === "START_JUMP") {
+            return "IN_AIR";
         }
-        if (this.state === "START_JUMP") return "IN_AIR";
-        return "IN_AIR";
+        return this.state; // Fallback
     }
 
     getDesiredVelocity(deltaTime, supportInfo, characterOrientation, currentVelocity) {
@@ -303,18 +315,30 @@ export class Game {
             const dt = this.scene.getEngine().getDeltaTime() / 1000;
             if (!this.characterController) return;
 
+            // Update player mesh position from character controller
             this.playerMesh.position.copyFrom(this.characterController.getPosition());
 
+            // Update camera position and character orientation based on mode
             if (this.isFirstPerson) {
                 this.fpCamera.position.copyFrom(this.playerMesh.position);
                 this.fpCamera.position.y += this.h / 2; // Eye level at capsule center
+                BABYLON.Quaternion.FromEulerAnglesToRef(0, this.fpCamera.rotation.y, 0, this.characterOrientation);
             } else {
                 this.tpCamera.target.copyFrom(this.playerMesh.position);
+                // Use the camera's forward direction to set orientation
+                const forward = this.tpCamera.getForwardRay().direction;
+                forward.y = 0; // Keep it horizontal
+                forward.normalize();
+                const yaw = Math.atan2(forward.x, forward.z);
+                BABYLON.Quaternion.RotationAxisToRef(BABYLON.Axis.Y, yaw, this.characterOrientation);
+                // Ensure the mesh faces the same direction (no additional offset needed)
             }
+
+            // Sync the player mesh rotation with characterOrientation
+            this.playerMesh.rotationQuaternion = this.characterOrientation.clone();
 
             const down = new BABYLON.Vector3(0, -1, 0);
             const support = this.characterController.checkSupport(dt, down);
-            BABYLON.Quaternion.FromEulerAnglesToRef(0, this.fpCamera.rotation.y, 0, this.characterOrientation);
             const currentVelocity = this.characterController.getVelocity();
             const desiredVelocity = this.getDesiredVelocity(dt, support, this.characterOrientation, currentVelocity);
 
