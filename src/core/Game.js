@@ -76,10 +76,10 @@ export class Game {
             if (validMeshes.length === 0) throw new Error("No valid mesh with vertices found in cs_assault.glb");
             this.ground = validMeshes.length > 1 ? BABYLON.Mesh.MergeMeshes(validMeshes, true, true, undefined, false, true) : validMeshes[0];
             this.ground.position.y = -1;
-            this.ground.scaling = new BABYLON.Vector3(1.5, 1.5, 1.5);
+            this.ground.scaling = new BABYLON.Vector3(2, 2, 2);
             this.groundAggregate = new BABYLON.PhysicsAggregate(this.ground, BABYLON.PhysicsShapeType.MESH, { mass: 0 }, this.scene);
 
-            this.h = 1.8;
+            this.h = 2.5;
             this.r = 0.6;
             this.playerMesh = BABYLON.MeshBuilder.CreateCapsule("player", { height: this.h, radius: this.r }, this.scene);
             this.playerMesh.position.copyFrom(this.spawnPoint);
