@@ -90,14 +90,25 @@ export class Game {
                 totalAmmo: 90,
                 fireRate: 0.1,
                 bulletSpeed: 400,
-                bulletRange: 150
+                bulletRange: 150,
+                thirdPersonPosition: new BABYLON.Vector3(
+                    0.55,  // X-axis: Right (increase for further right, decrease or negative for left)
+                    0.45,  // Y-axis: Up (increase for higher, decrease for lower)
+                    0.4   // Z-axis: Forward (increase for further forward, decrease for closer)
+                )
             });
+            
             const secondaryGun = new GunObject(this.scene, "deagle.glb", {
                 clipSize: 7,
                 totalAmmo: 21,
                 fireRate: 0.2,
                 bulletSpeed: 300,
-                bulletRange: 100
+                bulletRange: 100,
+                thirdPersonPosition: new BABYLON.Vector3(
+                    0.65,  // X-axis: Right
+                    0.5,  // Y-axis: Up
+                    1   // Z-axis: Forward
+                )
             });
 
             await Promise.all([primaryGun.load(), secondaryGun.load()]);

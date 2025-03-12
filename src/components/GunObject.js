@@ -44,7 +44,8 @@ export class GunObject {
         if (!this.mesh || !this.isLoaded) return;
         this.mesh.parent = cameraOrMesh;
         this.mesh.position = this.isFirstPerson ? this.firstPersonPosition : this.thirdPersonPosition;
-        this.mesh.rotation = this.isFirstPerson ? new BABYLON.Vector3(0, 0, 0) : new BABYLON.Vector3(0, Math.PI, 0);
+        this.mesh.rotation = new BABYLON.Vector3(0, 0, 0); // No rotation for testing
+        //console.log("Gun forward direction:", this.mesh.getDirection(BABYLON.Vector3.Forward()).asArray());
     }
 
     canShoot() {
