@@ -7,6 +7,7 @@
         "preview": "vite preview"
     },
     "dependencies": {
+        "@babylonjs/core": "^7.53.2",
         "peerjs": "^1.5.4",
         "vite": "^6.2.0"
     }

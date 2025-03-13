@@ -1,6 +1,8 @@
+// Game.js
 import { StateManager } from "./StateManager";
 import { GunObject } from "../components/GunObject";
 import { Inventory } from "../components/Inventory";
+import { Skeleton } from "../components/Skeleton";
 
 export class Game {
     constructor(engine, canvas) {
@@ -17,10 +19,6 @@ export class Game {
         this.yThreshold = -50;
         this.isFirstPerson = true;
         this.inventory = new Inventory();
-        this.leftUpperArm = null;  // Upper left arm
-        this.leftLowerArm = null;  // Lower left arm (forearm)
-        this.rightUpperArm = null; // Upper right arm
-        this.rightLowerArm = null; // Lower right arm (forearm)
 
         // HUD elements
         this.hud = {
@@ -87,83 +85,13 @@ export class Game {
             this.ground.scaling = new BABYLON.Vector3(1.5, 1.5, 1.5);
             this.groundAggregate = new BABYLON.PhysicsAggregate(this.ground, BABYLON.PhysicsShapeType.MESH, { mass: 0 }, this.scene);
         
-            // Player dimensions
-            this.h = 1.8; // Total height (for physics)
-            this.r = 0.6; // Width for physics capsule
-    
-            // Physics capsule (invisible)
-            this.playerMesh = BABYLON.MeshBuilder.CreateCapsule("playerPhysics", { height: this.h, radius: this.r / 2 }, this.scene);
-            this.playerMesh.position.copyFrom(this.spawnPoint);
-            this.playerMesh.isVisible = false;
-            this.characterController = new BABYLON.PhysicsCharacterController(this.spawnPoint, { capsuleHeight: this.h, capsuleRadius: this.r / 2 }, this.scene);
-        
-            // Stick figure visual representation
-            this.playerModel = new BABYLON.Mesh("playerModel", this.scene);
-            this.playerModel.position.copyFrom(this.spawnPoint);
-            this.playerModel.parent = this.playerMesh;
-    
-            // Scaling factor to place head at 2 units above ground (2 / 1.9 ≈ 1.05263)
-            const scaleFactor = 2 / 1.9; // ≈ 1.05263
-            this.playerModel.scaling = new BABYLON.Vector3(scaleFactor, scaleFactor, scaleFactor);
-    
-            // Adjust position to align head at y = 1 (2 units above ground)
-            // Head top: y = 1.0 relative to playerModel, after scaling: 1.0 * 1.05263 = 1.05263
-            // Solve: playerModel.position.y + 1.05263 = 1
-            // playerModel.position.y = 1 - 1.05263 ≈ -0.05263
-            this.playerModel.position.y = 1 - (1.0 * scaleFactor);
-    
-            // Torso (thin stick)
-            this.torso = BABYLON.MeshBuilder.CreateCylinder("torso", { height: 0.8, diameter: 0.1 }, this.scene);
-            this.torso.parent = this.playerModel;
-            this.torso.position.y = 0.4; // Centered vertically (bottom at y=0, top at y=0.8)
-            this.torso.material = new BABYLON.StandardMaterial("torsoMat", this.scene);
-            this.torso.material.diffuseColor = new BABYLON.Color3(0.5, 0.5, 0.5); // Gray
-    
-            // Head
-            this.head = BABYLON.MeshBuilder.CreateSphere("head", { diameter: 0.2 }, this.scene);
-            this.head.parent = this.torso;
-            this.head.position.y = 0.5; // Atop torso (y=0.9 relative to playerModel)
-            this.head.material = new BABYLON.StandardMaterial("headMat", this.scene);
-            this.head.material.diffuseColor = new BABYLON.Color3(1, 0.8, 0.6); // Skin tone
-    
-            // Left Arm (red)
-            this.leftArm = BABYLON.MeshBuilder.CreateCylinder("leftArm", { height: 0.8, diameter: 0.08 }, this.scene);
-            this.leftArm.parent = this.torso;
-            this.leftArm.position = new BABYLON.Vector3(-0.15, 0.35, 0); // Shoulder pivot point
-            this.leftArm.rotation.z = Math.PI / 2; // Default: extends left (T-pose for arms)
-            this.leftArm.material = new BABYLON.StandardMaterial("leftLimbMat", this.scene);
-            this.leftArm.material.diffuseColor = new BABYLON.Color3(1, 0, 0); // Red for left limbs
-            this.leftArm.isVisible = !this.isFirstPerson;
-    
-            // Right Arm (blue)
-            this.rightArm = BABYLON.MeshBuilder.CreateCylinder("rightArm", { height: 0.8, diameter: 0.08 }, this.scene);
-            this.rightArm.parent = this.torso;
-            this.rightArm.position = new BABYLON.Vector3(0.15, 0.35, 0); // Shoulder pivot point
-            this.rightArm.rotation.z = -Math.PI / 2; // Default: extends right (T-pose for arms)
-            this.rightArm.material = new BABYLON.StandardMaterial("rightLimbMat", this.scene);
-            this.rightArm.material.diffuseColor = new BABYLON.Color3(0, 0, 1); // Blue for right limbs
-            this.rightArm.isVisible = !this.isFirstPerson;
-    
-            // Left Leg (red, pivot at top, top connecting at torso bottom)
-            this.leftLeg = BABYLON.MeshBuilder.CreateCylinder("leftLeg", { height: 0.9, diameter: 0.08 }, this.scene);
-            this.leftLeg.parent = this.torso;
-            this.leftLeg.position = new BABYLON.Vector3(-0.05, -0.4, 0); // Pivot at torso bottom (y=0 relative to playerModel)
-            this.leftLeg.setPivotPoint(new BABYLON.Vector3(0, 0.45, 0)); // Pivot at top (0.45 below center)
-            this.leftLeg.rotation.x = 0; // No rotation needed; cylinder naturally points upward, pivot at top
-            this.leftLeg.position.y -= 0.45; // Align top with torso bottom
-            this.leftLeg.material = new BABYLON.StandardMaterial("leftLimbMat", this.scene);
-            this.leftLeg.material.diffuseColor = new BABYLON.Color3(1, 0, 0); // Red for left limbs
-    
-            // Right Leg (blue, pivot at top, top connecting at torso bottom)
-            this.rightLeg = BABYLON.MeshBuilder.CreateCylinder("rightLeg", { height: 0.9, diameter: 0.08 }, this.scene);
-            this.rightLeg.parent = this.torso;
-            this.rightLeg.position = new BABYLON.Vector3(0.05, -0.4, 0); // Pivot at torso bottom (y=0 relative to playerModel)
-            this.rightLeg.setPivotPoint(new BABYLON.Vector3(0, 0.45, 0)); // Pivot at top (0.45 below center)
-            this.rightLeg.rotation.x = 0; // No rotation needed; cylinder naturally points upward, pivot at top
-            this.rightLeg.position.y -= 0.45; // Align top with torso bottom
-            this.rightLeg.material = new BABYLON.StandardMaterial("rightLimbMat", this.scene);
-            this.rightLeg.material.diffuseColor = new BABYLON.Color3(0, 0, 1); // Blue for right limbs
-    
+            // Player setup using Skeleton class
+            this.player = new Skeleton(this.scene, this.physicsPlugin, this.spawnPoint, this);
+            this.characterController = new BABYLON.PhysicsCharacterController(this.spawnPoint, { 
+                capsuleHeight: this.player.height, 
+                capsuleRadius: this.player.radius / 2 
+            }, this.scene);
+
             // Gun setup
             const primaryGun = new GunObject(this.scene, "rifle.glb", {
                 clipSize: 30,
@@ -221,13 +149,9 @@ export class Game {
         const activeGun = this.inventory.getActiveGun();
         if (activeGun && activeGun.isLoaded) {
             activeGun.setFirstPerson(this.isFirstPerson);
-            activeGun.updateParenting(this.isFirstPerson ? this.fpCamera : this.torso);
+            activeGun.updateParenting(this.isFirstPerson ? this.fpCamera : this.player.model);
             this.updateHUD();
         }
-
-        // Update arm visibility (single segments now)
-        if (this.leftArm) this.leftArm.isVisible = !this.isFirstPerson;
-        if (this.rightArm) this.rightArm.isVisible = !this.isFirstPerson;
     }
 
     shoot() {
@@ -269,8 +193,7 @@ export class Game {
         this.hud.gunIndicator.textContent = gunName;
 
         this.hud.ammoDisplay.textContent = `${activeGun.currentClip} / ${activeGun.totalAmmo}`;
-
-        this.hud.healthFill.style.width = "100%";
+        this.hud.healthFill.style.width = `${this.player.health}%`;
 
         if (activeGun.isReloading) {
             this.hud.reloadIndicator.classList.add("reloading");
@@ -439,36 +362,30 @@ export class Game {
             if (event.button === 0 && document.pointerLockElement === this.canvas) this.shoot();
         });
     
-        // Animation variables for walking
-        let legAnimationTime = 0;
-        const legSwingAmplitude = Math.PI / 12; // 15 degrees to prevent raising
-        const legSwingFrequency = 4; // Cycles per second
-    
         this.scene.onBeforeRenderObservable.add(() => {
             const dt = this.scene.getEngine().getDeltaTime() / 1000;
-            if (!this.characterController) return;
+            if (!this.characterController || !this.player.isLoaded) return;
     
-            this.playerMesh.position.copyFrom(this.characterController.getPosition());
+            this.player.model.position.copyFrom(this.characterController.getPosition());
     
-            // Raycast to find ground level beneath player
-            const rayOrigin = new BABYLON.Vector3(this.playerMesh.position.x + 0.5, this.playerMesh.position.y + 1, this.playerMesh.position.z); // Slightly above player
-            const rayDirection = new BABYLON.Vector3(0, -1, 0); // Downward
-            const ray = new BABYLON.Ray(rayOrigin, rayDirection, 10); // Max distance of 10 units
+            // Raycast to find ground level
+            const rayOrigin = new BABYLON.Vector3(this.player.model.position.x + 0.5, this.player.model.position.y + 1, this.player.model.position.z);
+            const rayDirection = new BABYLON.Vector3(0, -1, 0);
+            const ray = new BABYLON.Ray(rayOrigin, rayDirection, 10);
             const hit = this.scene.pickWithRay(ray, (mesh) => mesh === this.ground);
     
-            let groundLevel = -1; // Default ground level
+            let groundLevel = -1;
             if (hit && hit.pickedPoint) {
                 groundLevel = hit.pickedPoint.y;
             }
     
             if (this.isFirstPerson) {
-                this.fpCamera.position.copyFrom(this.playerMesh.position);
-                // Target camera height: 2 units above ground (aligned with head)
-                const targetCameraHeight = groundLevel + 2.0; // 2 units above actual ground
+                this.fpCamera.position.copyFrom(this.player.model.position);
+                const targetCameraHeight = groundLevel + 2.0;
                 this.fpCamera.position.y = targetCameraHeight;
                 BABYLON.Quaternion.FromEulerAnglesToRef(0, this.fpCamera.rotation.y, 0, this.characterOrientation);
             } else {
-                this.tpCamera.target.copyFrom(this.playerMesh.position);
+                this.tpCamera.target.copyFrom(this.player.model.position);
                 const forward = this.tpCamera.getForwardRay().direction;
                 forward.y = 0;
                 forward.normalize();
@@ -476,8 +393,7 @@ export class Game {
                 BABYLON.Quaternion.RotationAxisToRef(BABYLON.Axis.Y, yaw, this.characterOrientation);
             }
     
-            this.playerMesh.rotationQuaternion = this.characterOrientation.clone();
-            this.playerModel.rotationQuaternion = this.characterOrientation.clone();
+            this.player.model.rotationQuaternion = this.characterOrientation.clone();
     
             const down = new BABYLON.Vector3(0, -1, 0);
             const support = this.characterController.checkSupport(dt, down);
@@ -491,12 +407,12 @@ export class Game {
     
             if (this.peerManager && this.peerManager.isMultiplayer) {
                 this.peerManager.streamManagers.move.sendMove(desiredVelocity);
-                this.stateManager.logEvent("velocity", { velocity: desiredVelocity.asArray(), position: this.playerMesh.position.asArray() });
+                this.stateManager.logEvent("velocity", { velocity: desiredVelocity.asArray(), position: this.player.model.position.asArray() });
             }
     
             if (this.peerManager && this.peerManager.isHost && this.isMultiplayer) {
-                if (this.playerMesh.position.y < this.yThreshold) {
-                    this.playerMesh.position.copyFrom(this.spawnPoint);
+                if (this.player.model.position.y < this.yThreshold) {
+                    this.player.model.position.copyFrom(this.spawnPoint);
                     this.characterController.setVelocity(BABYLON.Vector3.Zero());
                     this.peerManager.streamManagers.ghost.sendUpdate();
                 }
@@ -518,17 +434,8 @@ export class Game {
                 }
             }
     
-            // Walking animation for legs (pivot around X-axis, limited to prevent raising)
-            if (this.state === "ON_GROUND" && desiredVelocity.length() > 0.1) {
-                legAnimationTime += dt * legSwingFrequency;
-                const swing = -Math.sin(legAnimationTime) * legSwingAmplitude; // Negative to swing downward
-                this.leftLeg.rotation.x = swing; // Base at 0, swing downward
-                this.rightLeg.rotation.x = -swing; // Opposite swing downward
-            } else {
-                this.leftLeg.rotation.x = 0; // Reset to vertical standing (downward)
-                this.rightLeg.rotation.x = 0; // Reset to vertical standing (downward)
-            }
-    
+            // Update walking animation based on movement
+            this.player.setWalking(this.inputDirection.length() > 0 && this.state === "ON_GROUND");
             this.updateHUD();
         });
     }
@@ -566,10 +473,10 @@ export class Game {
     }
 
     getState() {
-        if (!this.isReady || !this.playerMesh) return null;
+        if (!this.isReady || !this.player.model) return null;
         const state = {
             player: {
-                position: this.playerMesh.position.asArray(),
+                position: this.player.model.position.asArray(),
                 velocity: this.characterController.getVelocity().asArray()
             },
             objects: []
