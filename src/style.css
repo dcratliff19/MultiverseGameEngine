@@ -16,3 +16,34 @@ html, body, canvas {
 #lobby button, #lobby input {
     margin: 5px;
 }
+
+#crosshair {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 6; /* above HUD, below lobby */
+}
+
+#crosshair .line {
+    position: absolute;
+    background: #00ffcc;
+    box-shadow: 0 0 6px #00ffcc;
+    border-radius: 1px;
+}
+
+#crosshair .horizontal {
+    width: 20px;
+    height: 2px;
+}
+
+#crosshair .vertical {
+    width: 2px;
+    height: 20px;
+}
+
+#crosshair .left  { right: 6px; top: 50%; transform: translateY(-50%); }
+#crosshair .right { left: 6px;  top: 50%; transform: translateY(-50%); }
+#crosshair .top   { bottom: 6px; left: 50%; transform: translateX(-50%); }
+#crosshair .bottom{ top: 6px;    left: 50%; transform: translateX(-50%); }

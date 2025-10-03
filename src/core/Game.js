@@ -3,7 +3,7 @@ import { GunObject } from "../components/GunObject";
 import { Inventory } from "../components/Inventory";
 
 export class Game {
-    constructor(engine, canvas) {
+      constructor(engine, canvas) {
         this.engine = engine;
         this.scene = new BABYLON.Scene(engine);
         this.canvas = canvas;
@@ -26,7 +26,12 @@ export class Game {
             reloadIndicator: document.getElementById("reload-indicator")
         };
 
-        // Character controller params (from first version)
+        this.crosshairSpread = 6;
+        this.crosshairMaxSpread = 20;
+        this.crosshairRecoveryRate = 40;
+        this.hud.crosshair = document.getElementById("crosshair");
+
+        // Character controller params
         this.state = "IN_AIR";
         this.inAirSpeed = 10.0;
         this.onGroundSpeed = 10.0;
@@ -40,7 +45,7 @@ export class Game {
         this.setupScene().then(() => {
             this.isReady = true;
             this.setupControls();
-            this.updateHUD(); // Initial HUD update
+            this.updateHUD();
         });
     }
 
@@ -51,6 +56,14 @@ export class Game {
                 this.handlePeerShoot(data);
             }
         });
+    }
+
+    // --- Crosshair helper ---
+    updateCrosshair(spread = this.crosshairSpread) {
+        this.hud.crosshair.querySelector(".left").style.right = `${spread}px`;
+        this.hud.crosshair.querySelector(".right").style.left = `${spread}px`;
+        this.hud.crosshair.querySelector(".top").style.bottom = `${spread}px`;
+        this.hud.crosshair.querySelector(".bottom").style.top = `${spread}px`;
     }
 
     async setupScene() {
@@ -140,38 +153,49 @@ export class Game {
         if (activeGun && activeGun.isLoaded) {
             activeGun.setFirstPerson(this.isFirstPerson);
             activeGun.updateParenting(this.isFirstPerson ? this.fpCamera : this.playerMesh);
-            this.updateHUD(); // Update HUD when gun changes
+            this.updateHUD();
         }
     }
 
-    shoot() {
-        const activeGun = this.inventory.getActiveGun();
-        if (!activeGun || !activeGun.isLoaded) {
-            console.warn("No active gun or gun not loaded, cannot shoot");
-            return;
-        }
-
-        const gunPosition = activeGun.mesh.getAbsolutePosition();
-        const direction = this.scene.activeCamera.getForwardRay().direction;
-
-        const hitInfo = activeGun.shoot(gunPosition, direction, this.peerManager);
-        if (hitInfo) {
-            this.handleHit(hitInfo);
-        }
-        activeGun.applyRecoil(this.fpCamera);
-        this.updateHUD(); // Update ammo after shooting
-
-        if (activeGun.currentClip === 0 && activeGun.totalAmmo > 0) {
-            activeGun.reload();
-            this.updateHUD(); // Show reload status
-        }
+    // --- UPDATED SHOOT METHOD ---
+shoot() {
+    const activeGun = this.inventory.getActiveGun();
+    if (!activeGun || !activeGun.isLoaded) {
+        console.warn("No active gun or gun not loaded, cannot shoot");
+        return;
     }
+
+    // Gun muzzle (spawn position)
+    const gunPosition = activeGun.mesh.getAbsolutePosition();
+
+    // Ray from crosshair (center of screen)
+    const screenX = this.scene.getEngine().getRenderWidth() / 2;
+    const screenY = this.scene.getEngine().getRenderHeight() / 2;
+    const pickRay = this.scene.createPickingRay(screenX, screenY, BABYLON.Matrix.Identity(), this.scene.activeCamera, false);
+
+    // Always use the ray’s direction (so bullets line up with crosshair)
+    const direction = pickRay.direction.normalize();
+
+    // Spawn + shoot bullet
+    const hitInfo = activeGun.shoot(gunPosition, direction, this.peerManager);
+    if (hitInfo) {
+        this.handleHit(hitInfo);
+    }
+
+    activeGun.applyRecoil(this.fpCamera);
+    this.updateHUD();
+
+    if (activeGun.currentClip === 0 && activeGun.totalAmmo > 0) {
+        activeGun.reload();
+        this.updateHUD();
+    }
+}
 
     reload() {
         const activeGun = this.inventory.getActiveGun();
         if (activeGun && activeGun.isLoaded) {
             activeGun.reload();
-            this.updateHUD(); // Show reload status
+            this.updateHUD();
         }
     }
 
@@ -179,17 +203,11 @@ export class Game {
         const activeGun = this.inventory.getActiveGun();
         if (!activeGun || !activeGun.isLoaded) return;
 
-        // Gun Indicator
         const gunName = activeGun === this.inventory.primary ? "Primary: Rifle" : "Secondary: Deagle";
         this.hud.gunIndicator.textContent = gunName;
-
-        // Ammo Display
         this.hud.ammoDisplay.textContent = `${activeGun.currentClip} / ${activeGun.totalAmmo}`;
+        this.hud.healthFill.style.width = "100%";
 
-        // Health Bar (placeholder, assumes 100% health for now)
-        this.hud.healthFill.style.width = "100%"; // Replace with actual health logic later
-
-        // Reload Indicator
         if (activeGun.isReloading) {
             this.hud.reloadIndicator.classList.add("reloading");
         } else {
@@ -252,7 +270,6 @@ export class Game {
             if (hit && hit.hit) this.handleHit({ pickedMesh: hit.pickedMesh, pickedPoint: hit.pickedPoint, normal: hit.normal, ray });
         }
     }
-
     // Updated from first version
     getNextState(supportInfo) {
         if (this.state === "IN_AIR") {
